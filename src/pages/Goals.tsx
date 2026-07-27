@@ -1,10 +1,64 @@
-import React, { useState } from 'react'
-import { Save, RefreshCw, Info } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  Minus,
+  RefreshCw,
+  Save,
+  SlidersHorizontal,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Navbar } from '../components/Layout/Navbar'
-import { calculateBMR, calculateTDEE, calculateCalorieGoal, lbsToKg } from '../utils/calculations'
+import { CoachPanel } from '../components/Coach/CoachPanel'
+import { TdeeBreakdown } from '../components/Coach/TdeeBreakdown'
+import { calculateBMR, calculateTDEE, calculateCalorieGoal } from '../utils/calculations'
 
 type Tab = 'calories' | 'macros' | 'other'
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'calories', label: 'Calories' },
+  { id: 'macros', label: 'Macros' },
+  { id: 'other', label: 'Limits' },
+]
+
+/*
+  Status tokens from docs/DESIGN-SYSTEM.md §2. The warning pair (#B45309 light /
+  #F59E0B dark) sits outside the Tailwind scale on purpose — it must never be reusable
+  as a chart series — so the documented hex values are written out here. Status is
+  always carried by an icon and words as well as by color.
+*/
+const WARNING_PILL =
+  'border-[#B45309]/30 bg-[#B45309]/5 text-[#B45309] dark:border-[#F59E0B]/30 dark:bg-[#F59E0B]/10 dark:text-[#F59E0B]'
+const GOOD_PILL =
+  'border-jade-600/30 bg-jade-50 text-jade-700 dark:border-jade-400/30 dark:bg-jade-400/10 dark:text-jade-400'
+
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-jade-500 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-50 dark:focus-visible:ring-offset-stone-950'
+
+/** Neutral card-level subhead. Display face, one step under `.section-title`. */
+const CardHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <h3 className="font-display text-base font-semibold tracking-tight text-stone-900 dark:text-stone-100">
+    {children}
+  </h3>
+)
+
+/** A read-only figure cell: label above, display numeral below. */
+const FigureCell: React.FC<{ label: string; value: number; caption: string }> = ({
+  label,
+  value,
+  caption,
+}) => (
+  <div className="rounded-xl border border-stone-200 p-3 dark:border-stone-800">
+    <p className="stat-label">{label}</p>
+    <p className="stat-value mt-1.5 text-xl">{value.toLocaleString()}</p>
+    <p className="mt-1 text-xs text-stone-500 dark:text-stone-500">{caption}</p>
+  </div>
+)
 
 export const Goals: React.FC = () => {
   const goals = useStore(s => s.goals)
@@ -17,11 +71,26 @@ export const Goals: React.FC = () => {
   const [local, setLocal] = useState({ ...goals })
   const [saved, setSaved] = useState(false)
 
+  /*
+    The manual form is seeded from the saved goals, so it has to re-seed whenever those
+    goals change underneath it — accepting a coach plan writes calories, macros and the
+    split percentages straight into the store. Without this, Save would quietly revert a
+    plan the user had just accepted a few centimetres up the page. Goals only ever change
+    through an explicit action (Save, Recalculate, Accept), so no in-progress edit is lost.
+  */
+  const lastGoalsRef = useRef(goals)
+  useEffect(() => {
+    if (lastGoalsRef.current === goals) return
+    lastGoalsRef.current = goals
+    setLocal({ ...goals })
+  }, [goals])
+
   const bmr = calculateBMR(profile, currentWeightKg)
   const tdee = calculateTDEE(bmr, profile.activityLevel)
   const suggestedCalories = calculateCalorieGoal(tdee, profile.goal)
 
   const totalPct = local.proteinPct + local.carbsPct + local.fatPct
+  const splitBalanced = totalPct === 100
 
   const handleSave = () => {
     updateGoals(local)
@@ -55,270 +124,461 @@ export const Goals: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Navbar title="Goals & Targets" />
+    <div className="min-h-screen bg-stone-50 dark:bg-stone-950">
+      <Navbar title="Goals & Targets" subtitle="Your coach plan and your manual numbers" />
 
-      <div className="page-container space-y-4">
+      <div className="page-container space-y-5">
+        <Link to="/" className={`btn-ghost -ml-3 px-3 text-sm ${FOCUS_RING}`}>
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Dashboard
+        </Link>
 
-        {/* TDEE info card */}
-        <div className="card p-4 bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800">
-          <div className="flex items-start gap-3">
-            <Info className="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-primary-700 dark:text-primary-300 text-sm">Your Energy Needs</p>
-              <div className="grid grid-cols-3 gap-2 mt-2 text-center">
-                <div>
-                  <p className="text-xs text-primary-600 dark:text-primary-400">BMR</p>
-                  <p className="font-bold text-primary-700 dark:text-primary-300">{Math.round(bmr)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-primary-600 dark:text-primary-400">TDEE</p>
-                  <p className="font-bold text-primary-700 dark:text-primary-300">{tdee}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-primary-600 dark:text-primary-400">Suggested</p>
-                  <p className="font-bold text-primary-700 dark:text-primary-300">{suggestedCalories}</p>
-                </div>
-              </div>
+        {/* ---------------------------------------------------------------- */}
+        {/* Your plan — what the coach recommends                            */}
+        {/* ---------------------------------------------------------------- */}
+        <section aria-labelledby="plan-heading" className="space-y-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles
+                className="h-4 w-4 shrink-0 text-jade-700 dark:text-jade-400"
+                aria-hidden="true"
+              />
+              <h2 id="plan-heading" className="section-title mb-0">
+                Your plan
+              </h2>
+            </div>
+            <p className="mt-1.5 text-sm leading-relaxed text-stone-600 dark:text-stone-400">
+              Built from your weigh-ins, what you have actually logged and your measurements.
+              Nothing here touches your daily targets until you accept it.
+            </p>
+          </div>
+
+          {/* Alerts are rendered by CoachPanel itself; mounting them here too would
+              show every alert twice on this page. */}
+          <CoachPanel />
+          <TdeeBreakdown />
+        </section>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Manual overrides — the user always has the last word              */}
+        {/* ---------------------------------------------------------------- */}
+        <section aria-labelledby="manual-heading" className="space-y-4">
+          <div className="border-t border-stone-200 pt-6 dark:border-stone-800">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal
+                className="h-4 w-4 shrink-0 text-stone-500 dark:text-stone-400"
+                aria-hidden="true"
+              />
+              <h2 id="manual-heading" className="section-title mb-0">
+                Manual overrides
+              </h2>
+            </div>
+            <p className="mt-1.5 text-sm leading-relaxed text-stone-600 dark:text-stone-400">
+              The coach only ever recommends. Set anything you like here and press Save — your
+              numbers win until you accept a new plan.
+            </p>
+          </div>
+
+          {/* Formula reference — the numbers behind Recalculate */}
+          <div className="card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardHeading>Formula reference</CardHeading>
               <button
+                type="button"
                 onClick={handleRecalculate}
-                className="mt-2 flex items-center gap-1.5 text-xs text-primary-600 dark:text-primary-400 font-medium"
+                className={`btn-ghost -my-1 px-2 text-sm ${FOCUS_RING}`}
               >
-                <RefreshCw className="w-3 h-3" /> Recalculate from profile
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                Recalculate from profile
               </button>
             </div>
-          </div>
-        </div>
 
-        {/* Tab selector */}
-        <div className="flex gap-1 bg-white dark:bg-gray-800 rounded-2xl p-1 shadow-sm">
-          {(['calories', 'macros', 'other'] as Tab[]).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-2 rounded-xl text-sm font-medium capitalize transition-colors ${
-                activeTab === tab
-                  ? 'bg-primary-500 text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-
-        {/* Calories tab */}
-        {activeTab === 'calories' && (
-          <div className="space-y-4">
-            <div className="card p-4">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
-                Daily Calorie Goal
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  min={1000}
-                  max={5000}
-                  step={50}
-                  value={local.calories}
-                  onChange={e => updateCalories(Number(e.target.value))}
-                  className="flex-1 accent-primary-500"
-                />
-                <input
-                  type="number"
-                  value={local.calories}
-                  onChange={e => updateCalories(Number(e.target.value))}
-                  className="input-field w-24 text-center font-bold"
-                />
-              </div>
-              <div className="flex justify-between text-xs text-gray-400 mt-1">
-                <span>1000</span><span>kcal</span><span>5000</span>
-              </div>
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <FigureCell label="BMR" value={Math.round(bmr)} caption="kcal at rest" />
+              <FigureCell label="TDEE" value={tdee} caption="kcal you burn" />
+              <FigureCell
+                label="Suggested"
+                value={suggestedCalories}
+                caption={`kcal to ${profile.goal}`}
+              />
             </div>
 
-            {/* Goal presets */}
-            <div className="card p-4">
-              <p className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Quick Presets</p>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: 'Cut (-500)', cal: tdee - 500, color: 'border-red-300 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300' },
-                  { label: 'Maintain', cal: tdee, color: 'border-primary-300 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' },
-                  { label: 'Bulk (+300)', cal: tdee + 300, color: 'border-blue-300 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300' },
-                ].map(preset => (
-                  <button
-                    key={preset.label}
-                    onClick={() => updateCalories(Math.max(1000, preset.cal))}
-                    className={`border rounded-xl p-2 text-center text-xs font-medium transition-colors ${preset.color}`}
-                  >
-                    <div className="font-bold text-base">{Math.max(1000, preset.cal)}</div>
-                    <div>{preset.label}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <p className="mt-3 text-xs leading-relaxed text-stone-500 dark:text-stone-500">
+              Straight from your age, height, weight and activity level. The coach&apos;s burn
+              estimate above also folds in what you have logged, so the two can differ.
+            </p>
           </div>
-        )}
 
-        {/* Macros tab */}
-        {activeTab === 'macros' && (
-          <div className="space-y-4">
-            <div className="card p-4">
-              <div className="flex justify-between items-center mb-3">
-                <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Macro Split</p>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${totalPct === 100 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                  {totalPct}% total
-                </span>
-              </div>
+          {/* Section selector */}
+          <div
+            className="card-flush flex gap-1 p-1"
+            role="group"
+            aria-label="Choose which targets to edit"
+          >
+            {TABS.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveTab(id)}
+                aria-pressed={activeTab === id}
+                className={`min-h-[44px] flex-1 rounded-xl px-3 text-sm font-semibold transition-colors duration-150 ${FOCUS_RING} ${
+                  activeTab === id
+                    ? 'bg-jade-600 text-white shadow-sm'
+                    : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-              {/* Visual macro bar */}
-              <div className="flex h-4 rounded-full overflow-hidden mb-4">
-                <div className="bg-blue-500 transition-all" style={{ width: `${local.proteinPct}%` }} />
-                <div className="bg-amber-500 transition-all" style={{ width: `${local.carbsPct}%` }} />
-                <div className="bg-red-400 transition-all" style={{ width: `${local.fatPct}%` }} />
-              </div>
-
-              {[
-                { key: 'proteinPct' as const, label: 'Protein', color: 'accent-blue-500', bg: 'bg-blue-500', gram: local.protein },
-                { key: 'carbsPct' as const, label: 'Carbs', color: 'accent-amber-500', bg: 'bg-amber-500', gram: local.carbs },
-                { key: 'fatPct' as const, label: 'Fat', color: 'accent-red-400', bg: 'bg-red-400', gram: local.fat },
-              ].map(({ key, label, color, gram }) => (
-                <div key={key} className="mb-4">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400">{gram}g</span>
-                      <input
-                        type="number"
-                        value={local[key]}
-                        onChange={e => updateMacroPct(key, Math.min(100, Math.max(0, Number(e.target.value))))}
-                        className="input-field w-16 text-center text-sm py-1"
-                        min={0} max={100}
-                      />
-                      <span className="text-xs text-gray-400">%</span>
-                    </div>
-                  </div>
+          {/* Calories tab */}
+          {activeTab === 'calories' && (
+            <div className="space-y-4">
+              <div className="card p-4">
+                <label htmlFor="calorie-goal" className="label-text">
+                  Daily calorie goal
+                </label>
+                <div className="flex items-center gap-3">
                   <input
                     type="range"
-                    min={5}
-                    max={70}
-                    value={local[key]}
-                    onChange={e => updateMacroPct(key, Number(e.target.value))}
-                    className={`w-full ${color}`}
+                    min={1000}
+                    max={5000}
+                    step={50}
+                    value={local.calories}
+                    onChange={e => updateCalories(Number(e.target.value))}
+                    aria-label="Daily calorie goal slider"
+                    className={`h-11 flex-1 cursor-pointer accent-jade-600 dark:accent-jade-400 ${FOCUS_RING}`}
+                  />
+                  <input
+                    id="calorie-goal"
+                    type="number"
+                    value={local.calories}
+                    onChange={e => updateCalories(Number(e.target.value))}
+                    className="input-field w-24 px-2 text-center font-display text-lg font-semibold tabular-nums"
                   />
                 </div>
-              ))}
+                <div className="mt-1 flex justify-between text-xs tabular-nums text-stone-500 dark:text-stone-500">
+                  <span>1,000</span>
+                  <span>kcal</span>
+                  <span>5,000</span>
+                </div>
+              </div>
 
-              {/* Preset splits */}
-              <div className="border-t dark:border-gray-700 pt-3 mt-3">
-                <p className="text-xs text-gray-500 mb-2">Common splits:</p>
-                <div className="flex gap-2 flex-wrap">
+              {/* Goal presets */}
+              <div className="card p-4">
+                <CardHeading>Quick presets</CardHeading>
+                <p className="mt-1 text-sm text-stone-600 dark:text-stone-400">
+                  Anchored to your{' '}
+                  <span className="font-display font-semibold tabular-nums">
+                    {tdee.toLocaleString()}
+                  </span>{' '}
+                  kcal formula burn.
+                </p>
+                <div className="mt-3 grid grid-cols-3 gap-2">
                   {[
-                    { label: 'Balanced', p: 30, c: 40, f: 30 },
-                    { label: 'Low Carb', p: 35, c: 25, f: 40 },
-                    { label: 'High Protein', p: 40, c: 35, f: 25 },
-                    { label: 'Keto', p: 25, c: 5, f: 70 },
-                  ].map(s => (
-                    <button
-                      key={s.label}
-                      onClick={() => {
-                        const next = { ...local, proteinPct: s.p, carbsPct: s.c, fatPct: s.f }
-                        next.protein = Math.round((next.calories * s.p) / 400)
-                        next.carbs = Math.round((next.calories * s.c) / 400)
-                        next.fat = Math.round((next.calories * s.f) / 900)
-                        setLocal(next)
-                      }}
-                      className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
-                    >
-                      {s.label} ({s.p}/{s.c}/{s.f})
-                    </button>
+                    { label: 'Cut', delta: -500, Icon: TrendingDown },
+                    { label: 'Maintain', delta: 0, Icon: Minus },
+                    { label: 'Bulk', delta: 300, Icon: TrendingUp },
+                  ].map(({ label, delta, Icon }) => {
+                    const value = Math.max(1000, tdee + delta)
+                    const active = local.calories === value
+                    const deltaText = delta === 0 ? 'at TDEE' : `${delta > 0 ? '+' : ''}${delta}`
+
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => updateCalories(value)}
+                        aria-pressed={active}
+                        className={`flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl border p-2.5 transition-colors duration-150 ${FOCUS_RING} ${
+                          active
+                            ? 'border-jade-600 bg-jade-50 dark:border-jade-400 dark:bg-jade-400/10'
+                            : 'border-stone-200 bg-white hover:bg-stone-50 dark:border-stone-800 dark:bg-stone-900 dark:hover:bg-stone-800'
+                        }`}
+                      >
+                        <span className="font-display text-lg font-semibold tabular-nums leading-tight text-stone-900 dark:text-stone-100">
+                          {value.toLocaleString()}
+                        </span>
+                        <span className="flex items-center gap-1 text-xs font-semibold text-stone-700 dark:text-stone-300">
+                          <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                          {label}
+                        </span>
+                        <span className="text-xs tabular-nums text-stone-500 dark:text-stone-500">
+                          {deltaText}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Macros tab */}
+          {activeTab === 'macros' && (
+            <div className="space-y-4">
+              <div className="card p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <CardHeading>Macro split</CardHeading>
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold tabular-nums ${
+                      splitBalanced ? GOOD_PILL : WARNING_PILL
+                    }`}
+                  >
+                    {splitBalanced ? (
+                      <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    )}
+                    <span className="sr-only">{splitBalanced ? 'Balanced: ' : 'Warning: '}</span>
+                    {totalPct}% total
+                  </span>
+                </div>
+
+                {/* Visual macro bar — color follows the macro, and every band is
+                    directly labelled in the rows underneath. */}
+                <div
+                  className="mb-4 flex h-3 overflow-hidden rounded-full bg-stone-100 dark:bg-stone-800"
+                  role="img"
+                  aria-label={`Macro split: protein ${local.proteinPct} percent, carbs ${local.carbsPct} percent, fat ${local.fatPct} percent`}
+                >
+                  <div
+                    className="bg-macro-protein transition-all duration-300"
+                    style={{ width: `${local.proteinPct}%` }}
+                  />
+                  <div
+                    className="bg-macro-carbs transition-all duration-300"
+                    style={{ width: `${local.carbsPct}%` }}
+                  />
+                  <div
+                    className="bg-macro-fat transition-all duration-300"
+                    style={{ width: `${local.fatPct}%` }}
+                  />
+                </div>
+
+                {!splitBalanced && (
+                  <p className="-mt-2 mb-4 text-xs leading-relaxed text-[#B45309] dark:text-[#F59E0B]">
+                    Protein, carbs and fat should add up to 100%. Yours add up to {totalPct}%.
+                  </p>
+                )}
+
+                {[
+                  {
+                    key: 'proteinPct' as const,
+                    label: 'Protein',
+                    accent: 'accent-macro-protein',
+                    dot: 'bg-macro-protein',
+                    gram: local.protein,
+                  },
+                  {
+                    key: 'carbsPct' as const,
+                    label: 'Carbs',
+                    accent: 'accent-macro-carbs',
+                    dot: 'bg-macro-carbs',
+                    gram: local.carbs,
+                  },
+                  {
+                    key: 'fatPct' as const,
+                    label: 'Fat',
+                    accent: 'accent-macro-fat',
+                    dot: 'bg-macro-fat',
+                    gram: local.fat,
+                  },
+                ].map(({ key, label, accent, dot, gram }) => (
+                  <div key={key} className="mb-4 last:mb-0">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2 text-sm font-medium text-stone-700 dark:text-stone-300">
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${dot}`}
+                          aria-hidden="true"
+                        />
+                        {label}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-display text-sm font-semibold tabular-nums text-stone-900 dark:text-stone-100">
+                          {gram}
+                          <span className="ml-0.5 font-sans text-xs font-medium text-stone-500">
+                            g
+                          </span>
+                        </span>
+                        <input
+                          type="number"
+                          value={local[key]}
+                          onChange={e =>
+                            updateMacroPct(key, Math.min(100, Math.max(0, Number(e.target.value))))
+                          }
+                          aria-label={`${label} percentage`}
+                          className="input-field w-16 px-1 text-center font-display text-sm font-semibold tabular-nums"
+                          min={0}
+                          max={100}
+                        />
+                        <span className="text-xs text-stone-500 dark:text-stone-500">%</span>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min={5}
+                      max={70}
+                      value={local[key]}
+                      onChange={e => updateMacroPct(key, Number(e.target.value))}
+                      aria-label={`${label} percentage slider`}
+                      className={`h-11 w-full cursor-pointer ${accent} ${FOCUS_RING}`}
+                    />
+                  </div>
+                ))}
+
+                {/* Preset splits */}
+                <div className="mt-4 border-t border-stone-200 pt-4 dark:border-stone-800">
+                  <p className="label-text">Common splits</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Balanced', p: 30, c: 40, f: 30 },
+                      { label: 'Low Carb', p: 35, c: 25, f: 40 },
+                      { label: 'High Protein', p: 40, c: 35, f: 25 },
+                      { label: 'Keto', p: 25, c: 5, f: 70 },
+                    ].map(s => (
+                      <button
+                        key={s.label}
+                        type="button"
+                        onClick={() => {
+                          const next = { ...local, proteinPct: s.p, carbsPct: s.c, fatPct: s.f }
+                          next.protein = Math.round((next.calories * s.p) / 400)
+                          next.carbs = Math.round((next.calories * s.c) / 400)
+                          next.fat = Math.round((next.calories * s.f) / 900)
+                          setLocal(next)
+                        }}
+                        className={`flex min-h-[44px] items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-stone-700 transition-colors duration-150 hover:bg-stone-50 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300 dark:hover:bg-stone-800 ${FOCUS_RING}`}
+                      >
+                        <span>{s.label}</span>
+                        <span className="font-display text-xs font-semibold tabular-nums text-stone-500 dark:text-stone-500">
+                          {s.p}/{s.c}/{s.f}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Manual gram targets */}
+              <div className="card p-4">
+                <CardHeading>Manual gram targets</CardHeading>
+                <p className="mt-1 text-sm text-stone-600 dark:text-stone-400">
+                  Set grams directly when a split percentage will not land where you want it.
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {[
+                    { key: 'protein' as const, label: 'Protein', dot: 'bg-macro-protein' },
+                    { key: 'carbs' as const, label: 'Carbs', dot: 'bg-macro-carbs' },
+                    { key: 'fat' as const, label: 'Fat', dot: 'bg-macro-fat' },
+                    { key: 'fiber' as const, label: 'Fiber', dot: 'bg-macro-fiber' },
+                  ].map(({ key, label, dot }) => (
+                    <div key={key}>
+                      <label htmlFor={`gram-${key}`} className="label-text flex items-center gap-2">
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${dot}`}
+                          aria-hidden="true"
+                        />
+                        {label} (g)
+                      </label>
+                      <input
+                        id={`gram-${key}`}
+                        type="number"
+                        value={local[key]}
+                        onChange={e => setLocal(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                        className="input-field text-center font-display font-semibold tabular-nums"
+                        min={0}
+                      />
+                    </div>
                   ))}
                 </div>
               </div>
             </div>
+          )}
 
-            {/* Manual gram targets */}
-            <div className="card p-4">
-              <p className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Manual Gram Targets</p>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { key: 'protein' as const, label: 'Protein (g)' },
-                  { key: 'carbs' as const, label: 'Carbs (g)' },
-                  { key: 'fat' as const, label: 'Fat (g)' },
-                  { key: 'fiber' as const, label: 'Fiber (g)' },
-                ].map(({ key, label }) => (
-                  <div key={key}>
-                    <label className="text-xs text-gray-500 block mb-1">{label}</label>
-                    <input
-                      type="number"
-                      value={local[key]}
-                      onChange={e => setLocal(prev => ({ ...prev, [key]: Number(e.target.value) }))}
-                      className="input-field text-center"
-                      min={0}
-                    />
-                  </div>
-                ))}
+          {/* Other tab */}
+          {activeTab === 'other' && (
+            <div className="space-y-4">
+              <div className="card space-y-5 p-4">
+                <div>
+                  <CardHeading>Water and limits</CardHeading>
+                  <p className="mt-1 text-sm leading-relaxed text-stone-600 dark:text-stone-400">
+                    Sodium and sugar are ceilings, not targets — you are on track when the day
+                    finishes under them.
+                  </p>
+                </div>
+                <NumberGoalRow
+                  id="goal-water"
+                  label="Water goal (ml)"
+                  value={local.water}
+                  onChange={v => setLocal(p => ({ ...p, water: v }))}
+                  min={500}
+                  max={6000}
+                  step={100}
+                />
+                <NumberGoalRow
+                  id="goal-sodium"
+                  label="Sodium limit (mg)"
+                  value={local.sodium}
+                  onChange={v => setLocal(p => ({ ...p, sodium: v }))}
+                  min={500}
+                  max={5000}
+                  step={100}
+                />
+                <NumberGoalRow
+                  id="goal-sugar"
+                  label="Sugar limit (g)"
+                  value={local.sugar}
+                  onChange={v => setLocal(p => ({ ...p, sugar: v }))}
+                  min={10}
+                  max={150}
+                  step={5}
+                />
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Other tab */}
-        {activeTab === 'other' && (
-          <div className="space-y-4">
-            <div className="card p-4 space-y-4">
-              <NumberGoalRow
-                label="Water Goal (ml)"
-                value={local.water}
-                onChange={v => setLocal(p => ({ ...p, water: v }))}
-                min={500}
-                max={6000}
-                step={100}
-              />
-              <NumberGoalRow
-                label="Sodium Limit (mg)"
-                value={local.sodium}
-                onChange={v => setLocal(p => ({ ...p, sodium: v }))}
-                min={500}
-                max={5000}
-                step={100}
-              />
-              <NumberGoalRow
-                label="Sugar Limit (g)"
-                value={local.sugar}
-                onChange={v => setLocal(p => ({ ...p, sugar: v }))}
-                min={10}
-                max={150}
-                step={5}
-              />
-            </div>
+          {/* Save button */}
+          <div>
+            <button
+              onClick={handleSave}
+              className={`btn-primary w-full ${saved ? 'bg-jade-700 hover:bg-jade-700' : ''}`}
+            >
+              {saved ? (
+                <Check className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Save className="h-4 w-4" aria-hidden="true" />
+              )}
+              {saved ? 'Saved' : 'Save goals'}
+            </button>
+            <p className="mt-2 text-center text-xs text-stone-500 dark:text-stone-500">
+              Saving replaces your daily targets with the numbers above.
+            </p>
+            <p aria-live="polite" className="sr-only">
+              {saved ? 'Goals saved' : ''}
+            </p>
           </div>
-        )}
-
-        {/* Save button */}
-        <button
-          onClick={handleSave}
-          className={`btn-primary w-full flex items-center justify-center gap-2 py-3 ${saved ? 'bg-green-500' : ''}`}
-        >
-          <Save className="w-4 h-4" />
-          {saved ? 'Saved!' : 'Save Goals'}
-        </button>
+        </section>
       </div>
     </div>
   )
 }
 
 const NumberGoalRow: React.FC<{
-  label: string; value: number; onChange: (v: number) => void
+  id: string; label: string; value: number; onChange: (v: number) => void
   min: number; max: number; step: number
-}> = ({ label, value, onChange, min, max, step }) => (
+}> = ({ id, label, value, onChange, min, max, step }) => (
   <div>
-    <div className="flex justify-between items-center mb-2">
-      <label className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</label>
+    <div className="mb-1 flex items-center justify-between gap-2">
+      <label htmlFor={id} className="text-sm font-medium text-stone-700 dark:text-stone-300">
+        {label}
+      </label>
       <input
+        id={id}
         type="number"
         value={value}
         onChange={e => onChange(Number(e.target.value))}
-        className="input-field w-24 text-center text-sm py-1"
+        className="input-field w-24 px-2 text-center font-display text-sm font-semibold tabular-nums"
         min={min} max={max} step={step}
       />
     </div>
@@ -327,10 +587,12 @@ const NumberGoalRow: React.FC<{
       min={min} max={max} step={step}
       value={value}
       onChange={e => onChange(Number(e.target.value))}
-      className="w-full accent-primary-500"
+      aria-label={`${label} slider`}
+      className={`h-11 w-full cursor-pointer accent-jade-600 dark:accent-jade-400 ${FOCUS_RING}`}
     />
-    <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-      <span>{min}</span><span>{max}</span>
+    <div className="flex justify-between text-xs tabular-nums text-stone-500 dark:text-stone-500">
+      <span>{min.toLocaleString()}</span>
+      <span>{max.toLocaleString()}</span>
     </div>
   </div>
 )

@@ -14,21 +14,26 @@ export const Navbar: React.FC<NavbarProps> = ({ title = 'MacroFit Pro', subtitle
   const streak = useStore(s => s.streak)
 
   return (
-    <header className="sticky top-0 z-30 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700">
-      <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">{title}</h1>
-          {subtitle && <p className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>}
+    <header className="sticky top-0 z-30 border-b border-stone-200 dark:border-stone-800 bg-white/90 dark:bg-stone-900/90 backdrop-blur-sm">
+      <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="font-display text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100 truncate">
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="text-xs text-stone-500 dark:text-stone-500 truncate">{subtitle}</p>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           {streak.current > 0 && (
-            <div className="flex items-center gap-1 bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded-lg">
-              <Flame className="w-4 h-4 text-orange-500" />
-              <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+            <span className="pill">
+              <Flame className="w-3.5 h-3.5 text-amber-700 dark:text-amber-500" aria-hidden="true" />
+              <span className="font-display font-semibold tabular-nums text-stone-900 dark:text-stone-100">
                 {streak.current}
               </span>
-            </div>
+              <span className="sr-only">day logging streak</span>
+            </span>
           )}
 
           {action}
@@ -39,7 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({ title = 'MacroFit Pro', subtitle
             aria-label="Toggle dark mode"
           >
             {darkMode
-              ? <Sun className="w-5 h-5 text-amber-400" />
+              ? <Sun className="w-5 h-5 text-amber-500" />
               : <Moon className="w-5 h-5" />
             }
           </button>

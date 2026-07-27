@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Timer, Square } from 'lucide-react'
+import { Timer, Square, CheckCircle2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 
 const PRESETS = [
@@ -32,17 +32,23 @@ export const FastingTimer: React.FC = () => {
   if (!fastingSession) {
     return (
       <div className="card p-4">
-        <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-3 flex items-center gap-2">
-          <Timer className="w-4 h-4 text-purple-500" /> Fasting Timer
+        <h3 className="section-title mb-1 flex items-center gap-2">
+          <Timer className="h-4 w-4 text-jade-600 dark:text-jade-400" aria-hidden="true" />
+          Fasting Timer
         </h3>
+        <p className="mb-3 text-sm text-stone-600 dark:text-stone-400">Choose a protocol to start a fast.</p>
         <div className="grid grid-cols-4 gap-2">
           {PRESETS.map(p => (
             <button
               key={p.label}
               onClick={() => startFasting(p.hours)}
-              className="py-2 text-sm font-semibold bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-xl hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
+              aria-label={`Start a ${p.hours} hour ${p.label} fast`}
+              className="flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl border border-stone-200 bg-stone-50 px-1 py-2 transition-colors duration-150 hover:border-jade-200 hover:bg-jade-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-jade-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-stone-800 dark:bg-stone-800/50 dark:hover:border-jade-800 dark:hover:bg-jade-900/25 dark:focus-visible:ring-offset-stone-900"
             >
-              {p.label}
+              <span className="font-display text-base font-semibold leading-none tabular-nums text-stone-900 dark:text-stone-100">
+                {p.label}
+              </span>
+              <span className="text-[10px] font-medium uppercase tracking-wide text-stone-500">{p.hours}h</span>
             </button>
           ))}
         </div>
@@ -60,28 +66,50 @@ export const FastingTimer: React.FC = () => {
 
   return (
     <div className="card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-          <Timer className="w-4 h-4 text-purple-500" />
-          {done ? 'Fast complete! 🎉' : `${fastingSession.targetHours}:${24 - fastingSession.targetHours} Fast`}
-        </h3>
+      <div className="mb-4 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="section-title mb-0 flex items-center gap-2">
+            {done ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-jade-600 dark:text-jade-400" aria-hidden="true" />
+            ) : (
+              <Timer className="h-4 w-4 shrink-0 text-jade-600 dark:text-jade-400" aria-hidden="true" />
+            )}
+            {done ? 'Fast complete' : `${fastingSession.targetHours}:${24 - fastingSession.targetHours} Fast`}
+          </h3>
+          <p className="mt-1 text-sm font-medium text-stone-500">
+            Target <span className="font-display tabular-nums text-stone-700 dark:text-stone-300">{fastingSession.targetHours}</span> h
+          </p>
+        </div>
         <button
           onClick={stopFasting}
-          className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
           title="End fast"
+          aria-label="End fast"
+          className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-[#B91C1C] transition-colors duration-150 hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-jade-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:text-[#F87171] dark:hover:bg-stone-800 dark:focus-visible:ring-offset-stone-900"
         >
-          <Square className="w-4 h-4" />
+          <Square className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true" />
+          End fast
         </button>
       </div>
 
       <div className="flex items-center gap-5">
         {/* Progress ring */}
-        <div className="relative w-[76px] h-[76px] shrink-0">
-          <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
-            <circle cx="40" cy="40" r={r} stroke="#e5e7eb" strokeWidth="7" fill="none" />
+        <div
+          className="relative h-[88px] w-[88px] shrink-0"
+          role="img"
+          aria-label={`${Math.round(pct)}% of target fast elapsed`}
+        >
+          <svg className="h-full w-full -rotate-90" viewBox="0 0 80 80">
             <circle
               cx="40" cy="40" r={r}
-              stroke={done ? '#22c55e' : '#a855f7'}
+              className="text-stone-200 dark:text-stone-800"
+              stroke="currentColor"
+              strokeWidth="7"
+              fill="none"
+            />
+            <circle
+              cx="40" cy="40" r={r}
+              className="text-jade-600 dark:text-jade-400"
+              stroke="currentColor"
               strokeWidth="7"
               fill="none"
               strokeLinecap="round"
@@ -90,22 +118,32 @@ export const FastingTimer: React.FC = () => {
               style={{ transition: 'stroke-dashoffset 1s linear' }}
             />
           </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-700 dark:text-gray-200">
+          <span className="absolute inset-0 flex items-center justify-center font-display text-sm font-semibold tabular-nums text-stone-700 dark:text-stone-200">
             {Math.round(pct)}%
           </span>
         </div>
 
-        <div className="space-y-1">
-          <div>
-            <p className="text-xs text-gray-500">Elapsed</p>
-            <p className="text-lg font-bold text-purple-500">{fmt(elapsed)}</p>
+        {/* Elapsed is the hero — tabular so the digits do not jitter as it ticks */}
+        <div className="min-w-0 flex-1">
+          <p className="stat-label">Elapsed</p>
+          <p className="mt-1 font-display text-3xl font-semibold leading-none tabular-nums text-stone-900 dark:text-stone-100">
+            {fmt(elapsed)}
+          </p>
+          <div className="mt-3">
+            {done ? (
+              <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-jade-700 dark:text-jade-400">
+                <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Target reached
+              </p>
+            ) : (
+              <>
+                <p className="stat-label">Remaining</p>
+                <p className="mt-1 font-display text-base font-semibold leading-none tabular-nums text-stone-600 dark:text-stone-400">
+                  {fmt(remaining)}
+                </p>
+              </>
+            )}
           </div>
-          {!done && (
-            <div>
-              <p className="text-xs text-gray-500">Remaining</p>
-              <p className="font-semibold text-gray-700 dark:text-gray-200">{fmt(remaining)}</p>
-            </div>
-          )}
         </div>
       </div>
     </div>

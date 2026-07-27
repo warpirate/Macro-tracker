@@ -110,17 +110,14 @@ export function getDayNutrition(day: DiaryDay): NutritionSummary {
   }
 }
 
-export function getProgressColor(pct: number): string {
-  if (pct >= 100) return 'bg-red-500'
-  if (pct >= 85) return 'bg-yellow-500'
-  return 'bg-primary-500'
-}
-
-export function getProgressColorHex(pct: number): string {
-  if (pct >= 100) return '#ef4444'
-  if (pct >= 85) return '#f59e0b'
-  return '#22c55e'
-}
+/*
+  getProgressColor / getProgressColorHex were removed in the design-system migration.
+  They returned the pre-redesign neon palette (#22c55e / #f59e0b / #ef4444), had no
+  remaining callers, and would have quietly reintroduced off-token colors.
+  Progress and status colors now come from docs/DESIGN-SYSTEM.md §2:
+  good = jade-600 / jade-400, warning = #B45309 / #F59E0B, critical = #B91C1C / #F87171 —
+  always paired with an icon and a label, never carried by color alone.
+*/
 
 export function lbsToKg(lbs: number): number {
   return parseFloat((lbs / 2.20462).toFixed(1))

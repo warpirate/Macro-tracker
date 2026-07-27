@@ -5,19 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
     <!-- Primary meta -->
-    <title>MacroFit Pro - Nutrition & Macro Tracker</title>
-    <meta name="description" content="Track your macros, calories, and nutrition goals with MacroFit Pro" />
-    <meta name="keywords" content="macro tracker, calorie counter, nutrition, fitness, diet" />
+    <title>MacroFit — Nutrition, Training &amp; Coaching</title>
+    <meta name="description" content="MacroFit — track macros and calories, log your training, and get coaching that adapts to your data." />
+    <meta name="keywords" content="macro tracker, calorie counter, nutrition, workout tracker, strength training, coaching, fitness, diet" />
 
     <!-- PWA -->
-    <meta name="theme-color" content="#22c55e" />
+    <meta name="theme-color" content="#0C8261" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="application-name" content="MacroFit" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
     <!-- Icons -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/icon-192.svg" />
+    <!-- iOS Safari does not rasterize SVG for the home-screen icon: pointing this at an
+         .svg yields a blank tile on "Add to Home Screen". Must stay a PNG. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
     <!-- iOS PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -26,9 +28,10 @@
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="MacroFit Pro - Nutrition & Macro Tracker" />
-    <meta property="og:description" content="Track your macros, calories, and nutrition goals with MacroFit Pro" />
-    <meta property="og:image" content="/icon-512.svg" />
+    <meta property="og:title" content="MacroFit — Nutrition, Training &amp; Coaching" />
+    <meta property="og:description" content="MacroFit — track macros and calories, log your training, and get coaching that adapts to your data." />
+    <!-- Social scrapers generally will not render SVG previews; use the PNG. -->
+    <meta property="og:image" content="/icon-512.png" />
   </head>
   <body>
     <div id="root"></div>

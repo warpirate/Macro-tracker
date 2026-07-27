@@ -20,10 +20,14 @@ const AuthContext = createContext<AuthContextValue>(null!)
 
 export const useAuth = () => useContext(AuthContext)
 
+// Must stay identical to the syncFields list inside hydrateStore in useStore.ts —
+// a key that is saved but not hydrated silently never comes back on a new device.
 const SYNC_FIELDS = [
   'profile', 'currentWeightKg', 'goals', 'diary', 'weightLog',
   'mealTemplates', 'customFoods', 'recentFoodIds', 'streak',
   'darkMode', 'bodyMeasurements', 'fastingSession', 'progressPhotos',
+  'recommendation', 'recommendationSeenAt',
+  'workoutLog', 'customLifts', 'workoutTemplates', 'activeWorkoutId',
 ] as const
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

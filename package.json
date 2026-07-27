@@ -9,11 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0",
+    "@fontsource-variable/figtree": "^5.3.0",
+    "@fontsource-variable/fraunces": "^5.3.0",
     "@supabase/supabase-js": "^2.98.0",
     "date-fns": "^3.3.1",
     "immer": "^10.0.3",
     "lucide-react": "^0.344.0",
+    "openai": "^6.49.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0",
@@ -32,5 +34,8 @@
     "typescript": "^5.2.2",
     "vite": "^5.1.4",
     "vite-plugin-pwa": "^1.2.0"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
   }
 }

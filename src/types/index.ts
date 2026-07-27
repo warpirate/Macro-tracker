@@ -186,3 +186,113 @@ export interface FastingSession {
   startTime: number   // Date.now()
   targetHours: number
 }
+
+// --- Coach ---
+
+export type PhaseType = 'cut' | 'lean_bulk' | 'maintain' | 'recomp'
+
+export interface BodyComposition {
+  bodyFatPct: number
+  leanMassKg: number
+  method: 'navy'          // Navy tape method from body measurements
+  measuredOn: string      // 'YYYY-MM-DD' of the measurement used
+}
+
+export interface TdeeEstimate {
+  predicted: number                 // Mifflin-St Jeor, or Katch-McArdle when LBM known
+  basis: 'mifflin' | 'katch'
+  measured: number | null           // from logged intake vs weight trend; null below threshold
+  confidence: 'none' | 'low' | 'medium' | 'high'
+  daysOfData: number                // days with BOTH intake and weight in the window
+  weightTrendKgPerWeek: number | null
+}
+
+export interface Recommendation {
+  id: string
+  createdAt: number
+  phase: PhaseType
+  calories: number
+  protein: number                   // grams
+  carbs: number
+  fat: number
+  targetRateKgPerWeek: number       // negative for a cut
+  durationWeeks: number
+  headline: string                  // one short line, e.g. "Lean bulk for 12 weeks"
+  rationale: string                 // 2-4 sentences, plain language, cites the user's data
+  tdeeUsed: number
+  source: 'ai' | 'local'            // 'local' = deterministic fallback was used
+  clamped: boolean                  // true if AI numbers were pulled back into bounds
+}
+
+export type CoachAlertKind =
+  | 'stalled' | 'bulk_too_long' | 'cut_too_long' | 'rate_too_fast'
+  | 'rate_too_slow' | 'low_protein' | 'insufficient_data' | 'stale_recommendation'
+
+export interface CoachAlert {
+  id: string
+  kind: CoachAlertKind
+  severity: 'info' | 'warning'
+  title: string
+  detail: string
+}
+
+// --- Workout ---
+
+export type MuscleGroup =
+  | 'Chest' | 'Back' | 'Shoulders' | 'Biceps' | 'Triceps'
+  | 'Quads' | 'Hamstrings' | 'Glutes' | 'Calves' | 'Core' | 'Full Body'
+
+export type LiftEquipment =
+  | 'Barbell' | 'Dumbbell' | 'Machine' | 'Cable' | 'Bodyweight' | 'Kettlebell' | 'Band'
+
+export interface Lift {
+  id: string
+  name: string
+  muscleGroup: MuscleGroup
+  equipment: LiftEquipment
+  isCompound: boolean
+  isCustom?: boolean
+}
+
+export interface WorkoutSet {
+  id: string
+  weightKg: number        // always stored in kg; convert at the UI edge only
+  reps: number
+  rpe?: number            // 5-10
+  isWarmup: boolean
+  completed: boolean
+}
+
+export interface WorkoutExercise {
+  id: string
+  liftId: string
+  lift: Lift              // denormalized, same pattern as FoodEntry.food
+  sets: WorkoutSet[]
+  notes?: string
+}
+
+export interface WorkoutSession {
+  id: string
+  date: string            // 'YYYY-MM-DD'
+  name: string
+  startedAt: number
+  endedAt?: number        // undefined while in progress
+  exercises: WorkoutExercise[]
+  notes?: string
+}
+
+export interface WorkoutTemplate {
+  id: string
+  name: string
+  liftIds: string[]
+  createdAt: number
+}
+
+export interface PersonalRecord {
+  liftId: string
+  liftName: string
+  bestWeightKg: number
+  bestEstimated1RM: number
+  bestSessionVolume: number
+  achievedOn: string
+}

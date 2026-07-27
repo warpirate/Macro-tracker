@@ -1,8 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { client, VISION_MODEL } from './_nebius'
 
 export const config = { runtime: 'edge' }
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
@@ -17,18 +15,23 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const { imageBase64, mealType } = body
+  if (!imageBase64) {
+    return new Response(JSON.stringify({ error: 'imageBase64 required' }), { status: 400 })
+  }
+
+  // Accept either a bare base64 payload or an already-formed data URL
+  const imageUrl = imageBase64.startsWith('data:')
+    ? imageBase64
+    : `data:image/jpeg;base64,${imageBase64}`
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const response = await client.chat.completions.create({
+      model: VISION_MODEL,
       max_tokens: 1024,
       messages: [{
         role: 'user',
         content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 },
-          },
+          { type: 'image_url', image_url: { url: imageUrl } },
           {
             type: 'text',
             text: `Analyze every food item visible in this photo. For each item estimate the quantity and macros.
@@ -43,7 +46,7 @@ Use accurate USDA-based values. Account for cooking methods (oil, butter). If mu
       }],
     })
 
-    const text = response.content.find(b => b.type === 'text')?.text ?? '[]'
+    const text = response.choices[0]?.message?.content ?? '[]'
     let foods: unknown[] = []
     try {
       const match = text.match(/\[[\s\S]*\]/)

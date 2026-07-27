@@ -1,6 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#22c55e"/>
-  <polyline points="4,19 10,19 13,11 16,23 19,13 22,19 28,19"
-    stroke="white" stroke-width="2.5" fill="none"
-    stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="MacroFit">
+  <rect width="32" height="32" rx="7" fill="#0C8261"/>
+  <!-- Two rings only: three would smear together at 16px. -->
+  <g transform="rotate(-90 16 16)" fill="none" stroke-linecap="round">
+    <circle cx="16" cy="16" r="9.5" stroke="#FAFAF9" stroke-opacity="0.22" stroke-width="3.4"/>
+    <circle cx="16" cy="16" r="9.5" stroke="#FAFAF9" stroke-width="3.4"
+            pathLength="100" stroke-dasharray="78 22"/>
+
+    <circle cx="16" cy="16" r="4" stroke="#FAFAF9" stroke-opacity="0.22" stroke-width="3"/>
+    <circle cx="16" cy="16" r="4" stroke="#A8E7CE" stroke-width="3"
+            pathLength="100" stroke-dasharray="52 48"/>
+  </g>
 </svg>
