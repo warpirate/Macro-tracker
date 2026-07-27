@@ -6,6 +6,7 @@ dev-dist
 .DS_Store
 *.log
 .playwright-mcp
+.vercel
 
 # Mobile app lives in its own repository
 /mobile
