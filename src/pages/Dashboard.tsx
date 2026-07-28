@@ -23,6 +23,7 @@ import { Navbar } from '../components/Layout/Navbar'
 import { MacroRing } from '../components/MacroRing'
 import { MacroBar } from '../components/MacroBar'
 import { WaterTracker } from '../components/WaterTracker'
+import { WeightGoalCard } from '../components/WeightGoalCard'
 import { getDayNutrition, getTodayString, formatDate } from '../utils/calculations'
 
 /*
@@ -177,6 +178,9 @@ export const Dashboard: React.FC = () => {
             </p>
           )}
         </section>
+
+        {/* --- Weight goal --------------------------------------------------- */}
+        <WeightGoalCard />
 
         {/* --- Coach summary ------------------------------------------------ */}
         <CoachSummaryCard />
