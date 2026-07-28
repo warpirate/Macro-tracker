@@ -12,6 +12,7 @@ import { Progress } from './pages/Progress'
 import { Goals } from './pages/Goals'
 import { Profile } from './pages/Profile'
 import { LoginPage } from './pages/LoginPage'
+import { OnboardingPage } from './pages/OnboardingPage'
 import { InstallPrompt } from './components/InstallPrompt'
 
 /*
@@ -54,13 +55,17 @@ const SyncIndicator: React.FC = () => {
 
 const AppContent: React.FC = () => {
   const darkMode = useStore(s => s.darkMode)
-  const { user, loading } = useAuth()
+  const onboardedAt = useStore(s => s.onboardedAt)
+  const { user, loading, hydrating } = useAuth()
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode)
   }, [darkMode])
 
-  if (loading) {
+  // `hydrating` is the fetch that follows a fresh sign-in. Waiting for it is what stops a
+  // returning user being shown the setup flow for half a second before their saved
+  // profile lands.
+  if (loading || hydrating) {
     return (
       <div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex items-center justify-center px-4">
         <div className="flex flex-col items-center gap-3 text-center">
@@ -79,6 +84,10 @@ const AppContent: React.FC = () => {
 
   if (!user) {
     return <LoginPage />
+  }
+
+  if (onboardedAt === null) {
+    return <OnboardingPage />
   }
 
   return (

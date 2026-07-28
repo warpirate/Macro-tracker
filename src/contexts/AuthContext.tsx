@@ -12,6 +12,15 @@ interface AuthContextValue {
   signInWithMagicLink: (email: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
   syncStatus: 'idle' | 'saving' | 'saved' | 'error'
+  /**
+   * A background fetch of the user's saved data is in flight.
+   *
+   * Only true for a sign-in that happens while the app is already running; the initial
+   * load is covered by `loading`. Anything that branches on saved state — the setup flow
+   * above all — has to wait for this, or a returning user is asked to set up an account
+   * they finished configuring months ago.
+   */
+  hydrating: boolean
 }
 
 const AuthContext = createContext<AuthContextValue>(null!)
@@ -24,7 +33,7 @@ const SYNC_FIELDS = [
   'profile', 'currentWeightKg', 'goals', 'diary', 'weightLog',
   'mealTemplates', 'customFoods', 'recentFoodIds', 'streak',
   'darkMode', 'bodyMeasurements', 'fastingSession', 'progressPhotos',
-  'recommendation', 'recommendationSeenAt',
+  'recommendation', 'recommendationSeenAt', 'onboardedAt',
   'workoutLog', 'customLifts', 'workoutTemplates', 'activeWorkoutId',
 ] as const
 
@@ -33,6 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [hydrating, setHydrating] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const userRef = useRef<User | null>(null)
   const isHydratingRef = useRef(false)
@@ -106,7 +116,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Don't touch loading here — getSession() already handles the initial load.
       // For fresh sign-ins (loading is already false), hydrate in the background.
       if (event === 'SIGNED_IN' && session?.user) {
-        loadUserData(session.user.id)
+        setHydrating(true)
+        loadUserData(session.user.id).finally(() => setHydrating(false))
       }
     })
 
@@ -174,7 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signInWithMagicLink, signOut, syncStatus }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signInWithMagicLink, signOut, syncStatus, hydrating }}>
       {children}
     </AuthContext.Provider>
   )
