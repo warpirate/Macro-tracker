@@ -8,5 +8,3 @@ dev-dist
 .playwright-mcp
 .vercel
 
-# Mobile app lives in its own repository
-/mobile
