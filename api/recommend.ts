@@ -1,4 +1,4 @@
-import { client, CHAT_MODEL } from './_nebius'
+import { API_KEY, client, CHAT_MODEL } from './_nebius'
 import { buildLocalRecommendation, clampRecommendationNumbers } from '../src/utils/localRecommendation'
 import type {
   BodyComposition,
@@ -446,6 +446,10 @@ export default async function handler(req: Request): Promise<Response> {
       },
       200,
     )
+
+  // No key on this deployment: the deterministic plan is the whole point of the local
+  // fallback, so serve it rather than spending a request that can only fail.
+  if (API_KEY === null) return localResponse()
 
   try {
     const response = await client.chat.completions.create(

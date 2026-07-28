@@ -1,10 +1,19 @@
-import { client, VISION_MODEL } from './_nebius'
+import { client, VISION_MODEL, requireApiKey } from './_nebius'
 
 export const config = { runtime: 'edge' }
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
+  }
+
+  try {
+    requireApiKey()
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 
   let body: { imageBase64: string; mealType?: string }

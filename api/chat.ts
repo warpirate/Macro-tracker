@@ -1,5 +1,5 @@
 import type OpenAI from 'openai'
-import { client, CHAT_MODEL } from './_nebius'
+import { client, CHAT_MODEL, requireApiKey } from './_nebius'
 
 export const config = { runtime: 'edge' }
 
@@ -101,6 +101,15 @@ function toolResultText(name: string, input: Record<string, unknown>): string {
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
+  }
+
+  try {
+    requireApiKey()
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 
   let body: { messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]; context: Record<string, any> }
