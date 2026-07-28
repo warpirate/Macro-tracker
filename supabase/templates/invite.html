@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
+    <title>You have been invited to MacroFit</title>
+    <style>
+      /* Clients that honour media queries get a true dark rendering. The rest keep the
+         light one, which stands on its own — nothing here depends on the override. */
+      @media (prefers-color-scheme: dark) {
+        .canvas { background-color: #1C1917 !important; }
+        .card { background-color: #292524 !important; border-color: #44403C !important; }
+        .heading, .code { color: #FAFAF9 !important; }
+        .body-text { color: #D6D3D1 !important; }
+        .muted { color: #A8A29E !important; }
+        .codebox { background-color: #1C1917 !important; border-color: #44403C !important; }
+        .rule { background-color: #44403C !important; }
+        .link { color: #71D5AF !important; }
+      }
+      @media only screen and (max-width: 600px) {
+        .pad { padding-left: 24px !important; padding-right: 24px !important; }
+        .heading { font-size: 24px !important; }
+      }
+    </style>
+  </head>
+  <body class="canvas" style="margin:0; padding:0; width:100%; background-color:#F5F5F4; -webkit-font-smoothing:antialiased;">
+    <!-- Inbox preview line. Hidden in the body itself. -->
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; mso-hide:all;">
+      Accept your invitation and set up your MacroFit account.
+    </div>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="canvas" style="background-color:#F5F5F4;">
+      <tr>
+        <td align="center" style="padding:40px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px; width:100%;">
+
+            <!-- Mark -->
+            <tr>
+              <td align="center" style="padding-bottom:28px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td width="64" height="64" align="center" valign="middle" bgcolor="#0C8261" style="width:64px; height:64px; border-radius:18px; background-color:#0C8261;">
+                      <div style="width:34px; height:34px; margin:0 auto; border:3px solid #A8E7CE; border-radius:50%;">
+                        <div style="width:16px; height:16px; margin:6px; border:3px solid #FAFAF9; border-radius:50%;"></div>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+                <div style="padding-top:14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:19px; font-weight:700; letter-spacing:-0.3px; color:#0C8261;">
+                  MacroFit
+                </div>
+              </td>
+            </tr>
+
+            <!-- Card -->
+            <tr>
+              <td class="card" style="background-color:#FFFFFF; border:1px solid #E7E5E4; border-radius:20px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td class="pad" style="padding:40px 40px 8px 40px;">
+                      <h1 class="heading" style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:28px; line-height:1.25; font-weight:700; letter-spacing:-0.5px; color:#1C1917;">
+                        You are invited
+                      </h1>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="pad" style="padding:14px 40px 0 40px;">
+                      <p class="body-text" style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; line-height:1.6; color:#57534E;">
+                        An account is waiting for <strong style="color:#0C8261;">{{ .Email }}</strong>. Accept the invitation to set a password and start tracking your macros, weight and workouts.
+                      </p>
+                    </td>
+                  </tr>
+
+                  <!-- Action -->
+                  <tr>
+                    <td class="pad" align="center" style="padding:32px 40px 0 40px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td align="center" bgcolor="#0C8261" style="border-radius:12px; background-color:#0C8261;">
+                            <a href="{{ .ConfirmationURL }}" style="display:inline-block; padding:15px 34px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; font-weight:700; line-height:1; color:#FFFFFF; text-decoration:none; border-radius:12px;">
+                              Accept invitation
+                            </a>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <!-- Code fallback: the app accepts this if the link will not open -->
+                  <tr>
+                    <td class="pad" style="padding:32px 40px 0 40px;">
+                      <p class="muted" style="margin:0 0 10px 0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; font-weight:600; letter-spacing:0.8px; text-transform:uppercase; color:#78716C;">
+                        Or enter this code
+                      </p>
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td class="codebox" align="center" style="background-color:#F5F5F4; border:1px solid #E7E5E4; border-radius:12px; padding:16px;">
+                            <span class="code" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:26px; font-weight:700; letter-spacing:8px; color:#1C1917;">{{ .Token }}</span>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td class="pad" style="padding:28px 40px 0 40px;">
+                      <div class="rule" style="height:1px; background-color:#E7E5E4; font-size:0; line-height:0;">&nbsp;</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="pad" style="padding:20px 40px 36px 40px;">
+                      <p class="muted" style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:13px; line-height:1.6; color:#78716C;">
+                        The link and code both expire in 60 minutes. If the button does nothing, copy this
+                        address into your browser:<br />
+                        <a class="link" href="{{ .ConfirmationURL }}" style="color:#0C8261; word-break:break-all;">{{ .ConfirmationURL }}</a>
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td align="center" style="padding:24px 24px 0 24px;">
+                <p class="muted" style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.6; color:#A8A29E;">
+                  You received this because someone invited this address to MacroFit. If you were not expecting it, ignore this email.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

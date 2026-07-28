@@ -9,8 +9,6 @@ interface AuthContextValue {
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>
-  signInWithGoogle: () => Promise<{ error: Error | null }>
-  signInWithGitHub: () => Promise<{ error: Error | null }>
   signInWithMagicLink: (email: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
   syncStatus: 'idle' | 'saving' | 'saved' | 'error'
@@ -155,21 +153,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error: error as Error | null }
   }
 
-  const signInWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    })
-    return { error: error as Error | null }
-  }
-
-  const signInWithGitHub = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'github',
-      options: { redirectTo: window.location.origin },
-    })
-    return { error: error as Error | null }
-  }
+  // No OAuth here on purpose: the Supabase project enables the `email` provider only, so a
+  // Google or GitHub button would fail with "Unsupported provider" every time it is
+  // pressed. Re-add both together with the provider credentials, never before.
 
   const signInWithMagicLink = async (email: string) => {
     const { error } = await supabase.auth.signInWithOtp({
@@ -188,7 +174,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signInWithGoogle, signInWithGitHub, signInWithMagicLink, signOut, syncStatus }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signInWithMagicLink, signOut, syncStatus }}>
       {children}
     </AuthContext.Provider>
   )

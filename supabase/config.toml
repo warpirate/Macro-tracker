@@ -243,10 +243,28 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# Branded auth emails. These apply to the LOCAL stack only — the hosted project reads its
+# own copies, so any edit here has to be pasted into the dashboard as well:
+# Authentication -> Emails -> Templates. See docs/EMAIL-TEMPLATES.md.
+[auth.email.template.confirmation]
+subject = "Confirm your email to start tracking"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.magic_link]
+subject = "Your MacroFit sign-in link"
+content_path = "./supabase/templates/magic-link.html"
+
+[auth.email.template.recovery]
+subject = "Reset your MacroFit password"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.email_change]
+subject = "Confirm your new MacroFit address"
+content_path = "./supabase/templates/email-change.html"
+
+[auth.email.template.invite]
+subject = "You're invited to MacroFit"
+content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
