@@ -174,6 +174,40 @@ export const validateTarget = (
 }
 
 /**
+ * Energy in a kilogram of body mass. The round 7700 is the conventional figure for fat;
+ * real tissue change is messier, which is why the coach re-fits this against measured
+ * weight later instead of trusting it forever.
+ */
+export const KCAL_PER_KG = 7700
+
+/** Never prescribe less than this, whatever the arithmetic says. */
+export const MIN_DAILY_CALORIES = 1200
+
+/**
+ * Daily calories for a pace, rather than the flat ±500 the shared helper applies.
+ *
+ * Without this the pace question is decoration: picking "gentle, 0.25 kg a week" and
+ * "quick, 0.75 kg a week" would produce the same target, and the app would then report the
+ * user as off-pace for a plan it never actually wrote.
+ *
+ * The floor matters as much as the rate. A large deficit on a small person can compute
+ * below what anyone should eat, and a number that low is the kind of thing an app should
+ * refuse to print rather than round down to.
+ */
+export const caloriesForPace = (
+  tdee: number,
+  goal: WeightGoal,
+  kgPerWeek: number | undefined,
+): number => {
+  if (goal === 'maintain' || kgPerWeek === undefined || !Number.isFinite(tdee)) {
+    return Math.round(tdee)
+  }
+  const dailyDelta = (Math.abs(kgPerWeek) * KCAL_PER_KG) / 7
+  const raw = goal === 'lose' ? tdee - dailyDelta : tdee + dailyDelta
+  return Math.round(Math.max(MIN_DAILY_CALORIES, raw))
+}
+
+/**
  * Weeks to reach the target at the chosen pace, or null when it cannot be worked out.
  * Used to answer the only question people actually ask of a target: how long.
  */

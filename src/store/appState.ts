@@ -615,5 +615,13 @@ export const createAppState: StateCreator<AppState, [['zustand/immer', never]], 
         (state as Record<string, unknown>)[key] = data[key]
       }
     }
+
+    // Accounts that predate the setup flow have no `onboardedAt`, and sending someone who
+    // has been logging for months back to "what should we call you?" would look like their
+    // data had been lost. Anything they have actually recorded stands in for having
+    // finished setup.
+    if (state.onboardedAt === null && (state.weightLog.length > 0 || Object.keys(state.diary).length > 0)) {
+      state.onboardedAt = Date.now()
+    }
   }),
 })

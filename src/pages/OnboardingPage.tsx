@@ -25,8 +25,9 @@ import {
   validateBasics,
   validateTarget,
   weeksToTarget,
+  caloriesForPace,
 } from '../utils/onboarding'
-import { calculateBMR, calculateCalorieGoal, calculateMacroGoals, calculateTDEE } from '../utils/calculations'
+import { calculateBMR, calculateMacroGoals, calculateTDEE } from '../utils/calculations'
 import type { ActivityLevel, UserProfile, WeightGoal } from '../types'
 
 /** The five stops, in order. The labels are what the rail shows. */
@@ -142,7 +143,7 @@ export const OnboardingPage: React.FC = () => {
   const goals = useStore(s => s.goals)
   const updateProfile = useStore(s => s.updateProfile)
   const addWeightEntry = useStore(s => s.addWeightEntry)
-  const recalculateGoals = useStore(s => s.recalculateGoals)
+  const updateGoals = useStore(s => s.updateGoals)
   const completeOnboarding = useStore(s => s.completeOnboarding)
 
   const [step, setStep] = useState(0)
@@ -223,7 +224,7 @@ export const OnboardingPage: React.FC = () => {
     const kg = Number.isFinite(weightKg) ? weightKg : currentWeightKg
     const bmr = calculateBMR(preview, kg)
     const tdee = calculateTDEE(bmr, activityLevel)
-    const calories = calculateCalorieGoal(tdee, goal)
+    const calories = caloriesForPace(tdee, goal, pace)
     const macros = calculateMacroGoals(calories, goals.proteinPct, goals.carbsPct, goals.fatPct, kg)
     return { tdee: Math.round(tdee), ...macros }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -259,7 +260,9 @@ export const OnboardingPage: React.FC = () => {
     updateProfile(answersToProfile(answers))
     const shown = weightUnit === 'kg' ? weightKg : lbsFromKg(weightKg)
     addWeightEntry({ date: new Date().toISOString().slice(0, 10), weight: Math.round(shown * 10) / 10 })
-    recalculateGoals()
+    // Not recalculateGoals(): that applies the shared flat ±500 and would overwrite the
+    // pace-derived target the last step just showed.
+    updateGoals({ calories: plan.calories, protein: plan.protein, carbs: plan.carbs, fat: plan.fat })
     completeOnboarding()
   }
 
