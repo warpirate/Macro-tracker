@@ -2,14 +2,14 @@ import React, { createContext, useContext, useEffect, useState, useRef } from 'r
 import { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../store/useStore'
+import { describeAuthError, normalizeEmail, type AuthResult } from '../utils/authErrors'
 
 interface AuthContextValue {
   user: User | null
   session: Session | null
   loading: boolean
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>
-  signUp: (email: string, password: string) => Promise<{ error: Error | null }>
-  signInWithMagicLink: (email: string) => Promise<{ error: Error | null }>
+  signIn: (email: string, password: string) => Promise<AuthResult>
+  signUp: (email: string, password: string) => Promise<AuthResult>
   signOut: () => Promise<void>
   syncStatus: 'idle' | 'saving' | 'saved' | 'error'
   /**
@@ -154,27 +154,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [])
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (rawEmail: string, password: string): Promise<AuthResult> => {
+    const email = normalizeEmail(rawEmail)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return { error: error as Error | null }
+    if (!error) return { error: null, notice: null }
+    return { error: describeAuthError(error, email), notice: null }
   }
 
-  const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password })
-    return { error: error as Error | null }
+  const signUp = async (rawEmail: string, password: string): Promise<AuthResult> => {
+    const email = normalizeEmail(rawEmail)
+    const { data, error } = await supabase.auth.signUp({ email, password })
+    if (error) return { error: describeAuthError(error, email), notice: null }
+
+    // GoTrue refuses to leak whether an address is registered: signing up an existing one
+    // succeeds, returning a fabricated user whose `identities` array is empty.
+    if (data.user && data.user.identities?.length === 0) {
+      return { error: `${email} already has an account. Switch to Sign In.`, notice: null }
+    }
+
+    if (data.session) return { error: null, notice: null }
+
+    return {
+      error: null,
+      notice: `Account created. Open the confirmation link we emailed to ${email}, then sign in.`,
+    }
   }
 
-  // No OAuth here on purpose: the Supabase project enables the `email` provider only, so a
-  // Google or GitHub button would fail with "Unsupported provider" every time it is
-  // pressed. Re-add both together with the provider credentials, never before.
-
-  const signInWithMagicLink = async (email: string) => {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    })
-    return { error: error as Error | null }
-  }
+  // Neither OAuth nor magic link here, and both for the same reason: the project cannot
+  // serve them. Only the `email` provider is enabled, so a Google or GitHub button fails
+  // with "Unsupported provider"; and the built-in mailer times out, so a magic link is a
+  // button whose entire job is to send an email that never arrives. Password sign-in needs
+  // no email at all once "Confirm email" is off, which is why it is the only one left.
+  // Restore magic link the moment custom SMTP is configured — the code is one call.
 
   const signOut = async () => {
     flushSave()
@@ -185,7 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signInWithMagicLink, signOut, syncStatus, hydrating }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut, syncStatus, hydrating }}>
       {children}
     </AuthContext.Provider>
   )

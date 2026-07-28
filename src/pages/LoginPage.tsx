@@ -45,9 +45,8 @@ const RingMark: React.FC<{ className?: string }> = ({ className }) => (
 )
 
 export const LoginPage: React.FC = () => {
-  const { signIn, signUp, signInWithMagicLink } = useAuth()
+  const { signIn, signUp } = useAuth()
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
-  const [emailMode, setEmailMode] = useState<'password' | 'magic'>('password')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -66,18 +65,12 @@ export const LoginPage: React.FC = () => {
     setMessage('')
     setLoading(true)
 
-    if (emailMode === 'magic') {
-      const { error } = await signInWithMagicLink(email)
-      if (error) setError(error.message)
-      else setMessage('Check your email — we sent you a sign-in link.')
-    } else if (mode === 'signin') {
-      const { error } = await signIn(email, password)
-      if (error) setError(error.message)
-    } else {
-      const { error } = await signUp(email, password)
-      if (error) setError(error.message)
-      else setMessage('Check your email to confirm your account, then sign in.')
-    }
+    const result = mode === 'signin' ? await signIn(email, password) : await signUp(email, password)
+    setError(result.error ?? '')
+    setMessage(result.notice ?? '')
+    // A new account that still needs confirming cannot sign in yet, so leave the user on
+    // the form they will need next rather than the one they just used.
+    if (mode === 'signup' && result.notice) setMode('signin')
     setLoading(false)
   }
 
@@ -126,9 +119,8 @@ export const LoginPage: React.FC = () => {
         </div>
 
         <div className="card animate-slide-up space-y-4 bg-white/85 p-6 backdrop-blur-xl dark:bg-stone-900/80">
-          {/* Mode tabs (only shown in password mode) */}
-          {emailMode === 'password' && (
-            <div className="flex gap-1 rounded-xl border border-stone-200 bg-stone-100 p-1 dark:border-stone-800 dark:bg-stone-800/60">
+          {/* Sign in / sign up */}
+          <div className="flex gap-1 rounded-xl border border-stone-200 bg-stone-100 p-1 dark:border-stone-800 dark:bg-stone-800/60">
               {(['signin', 'signup'] as const).map(m => (
                 <button
                   key={m}
@@ -144,8 +136,7 @@ export const LoginPage: React.FC = () => {
                   {m === 'signin' ? 'Sign In' : 'Sign Up'}
                 </button>
               ))}
-            </div>
-          )}
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -164,24 +155,22 @@ export const LoginPage: React.FC = () => {
               />
             </div>
 
-            {emailMode === 'password' && (
-              <div>
-                <label htmlFor="login-password" className="label-text">
-                  Password
-                </label>
-                <input
-                  id="login-password"
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                  placeholder="••••••••"
-                  className="input-field"
-                />
-              </div>
-            )}
+            <div>
+              <label htmlFor="login-password" className="label-text">
+                Password
+              </label>
+              <input
+                id="login-password"
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                minLength={6}
+                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                placeholder="••••••••"
+                className="input-field"
+              />
+            </div>
 
             {/* Status colors are reserved (design system §2) and always ship an icon + text. */}
             {error && (
@@ -215,8 +204,6 @@ export const LoginPage: React.FC = () => {
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                   Please wait…
                 </>
-              ) : emailMode === 'magic' ? (
-                'Send Magic Link'
               ) : mode === 'signin' ? (
                 'Sign In'
               ) : (
@@ -225,18 +212,6 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* Toggle magic link / password */}
-          <button
-            type="button"
-            onClick={() => {
-              setEmailMode(m => (m === 'password' ? 'magic' : 'password'))
-              setError('')
-              setMessage('')
-            }}
-            className="btn-ghost w-full text-sm font-semibold text-jade-700 hover:text-jade-800 dark:text-jade-400 dark:hover:text-jade-300"
-          >
-            {emailMode === 'password' ? 'Sign in without a password →' : '← Use password instead'}
-          </button>
         </div>
 
         <p className="mt-6 flex items-center justify-center gap-1.5 px-4 text-center text-xs text-stone-500 dark:text-stone-500">
