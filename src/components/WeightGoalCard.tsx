@@ -110,7 +110,8 @@ export const WeightGoalCard: React.FC = () => {
 
           {progress.fraction !== null && (
             <div className="space-y-1.5">
-              <div className="relative h-2 w-full overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+              {/* Matches MacroBar: stone-200 is invisible as an empty track. */}
+              <div className="relative h-2 w-full overflow-hidden rounded-full bg-stone-400 dark:bg-stone-600">
                 <div
                   className="progress-bar-fill h-full rounded-full bg-jade-600 dark:bg-jade-400"
                   style={{ width: `${Math.round(progress.fraction * 100)}%` }}

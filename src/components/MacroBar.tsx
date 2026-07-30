@@ -66,7 +66,9 @@ export const MacroBar: React.FC<MacroBarProps> = ({
       </div>
 
       {/* Recessive track, 4px rounded data-end, anchored to the left baseline. */}
-      <div className="relative h-2 w-full overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+      {/* stone-400, not stone-200: an empty track in stone-200 sits at about 1.15:1 against
+          a white card and reads as a missing bar rather than an empty one. */}
+      <div className="relative h-2 w-full overflow-hidden rounded-full bg-stone-400 dark:bg-stone-600">
         <div
           className={`progress-bar-fill h-full rounded-full ${bgColor}`}
           style={{ width: `${pct}%` }}

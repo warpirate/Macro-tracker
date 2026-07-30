@@ -224,7 +224,9 @@ export const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session }) => {
                         <span className="font-display font-semibold tabular-nums text-stone-700 dark:text-stone-300">
                           {Math.round(fromKg(liftVolume, unit)).toLocaleString()}
                         </span>
-                        {` ${unitLabel}`}
+                        {/* "355 kg" alone, sitting after "Chest · Dumbbell", reads as the
+                            working weight. It is the running volume for this lift. */}
+                        {` ${unitLabel} vol`}
                       </>
                     )}
                   </p>

@@ -56,8 +56,13 @@ export interface SetRowProps {
   unit: WeightUnit
   showRpe: boolean
   /**
-   * Progressive-overload hint in kg. Rendered as PLACEHOLDER text only: an untouched
-   * suggestion must never be logged as if the user actually did it.
+   * What this set will be logged as if the user just ticks it: the previous set of this
+   * exercise, else the progressive-overload target. In kg.
+   *
+   * Shown as placeholder text, and it still never reaches state on its own — but ticking
+   * the row now commits it verbatim. Mid-set the user is reading a number the app already
+   * knows; making them type it back before the tick would enable was friction with nothing
+   * on the other side of it.
    */
   suggestion: { weightKg: number; reps: number } | null
   /** True once this set beats the stored personal record for its lift. */
@@ -130,8 +135,41 @@ export const SetRow: React.FC<SetRowProps> = ({
     else setConfirmRemove(true)
   }
 
-  const canComplete = set.reps > 0
+  /**
+   * Ticking a row that was left empty logs the prefill rather than logging a zero.
+   *
+   * Only fields the user has not filled in are taken from it: someone who dialled the
+   * weight up to 22.5 and then ticked without touching reps meant 22.5, not last set's
+   * weight. The local input text is updated alongside state so the row reads back what was
+   * actually committed instead of continuing to show a hint.
+   */
+  const handleComplete = () => {
+    if (!set.completed && set.reps <= 0 && suggestion !== null && suggestion.reps > 0) {
+      const typedWeight = parseNumber(weightText)
+      const weightKg = typedWeight === null ? suggestion.weightKg : toKg(typedWeight, unit)
+      setWeightText(weightToText(weightKg, unit))
+      setRepsText(String(suggestion.reps))
+      onChange({ weightKg, reps: suggestion.reps, completed: true })
+      return
+    }
+    onChange({ completed: !set.completed })
+  }
+
+  // Enabled as soon as there is something to log, typed or prefilled. It used to require
+  // typed reps, so the tick sat greyed out beside a row already showing "20 kg × 10".
+  const canComplete = set.reps > 0 || (suggestion !== null && suggestion.reps > 0)
   const settled = set.completed
+
+  /*
+    Prefill text is a step darker than a normal placeholder. It has to be readable at a
+    glance between sets, and it is about to become the logged value on one tap — a hint that
+    faint reads as decoration. It stays lighter than entered text so the row still says which
+    numbers the user chose and which the app is offering.
+  */
+  const prefillWeight =
+    suggestion && suggestion.weightKg > 0 ? String(fromKg(suggestion.weightKg, unit)) : null
+  const prefillReps = suggestion && suggestion.reps > 0 ? String(suggestion.reps) : null
+  const prefillClass = 'placeholder:text-stone-600 dark:placeholder:text-stone-300'
 
   return (
     <div
@@ -165,9 +203,9 @@ export const SetRow: React.FC<SetRowProps> = ({
           inputMode="decimal"
           value={weightText}
           onChange={e => handleWeight(e.target.value)}
-          placeholder={suggestion && suggestion.weightKg > 0 ? String(fromKg(suggestion.weightKg, unit)) : '0'}
+          placeholder={prefillWeight ?? '0'}
           aria-label={`Set ${index} weight in ${unitLabel}`}
-          className={`${numberInputClass} ${settled ? 'border-transparent bg-transparent' : ''}`}
+          className={`${numberInputClass} ${prefillWeight ? prefillClass : ''} ${settled ? 'border-transparent bg-transparent' : ''}`}
         />
 
         <span className="text-center text-[10px] font-medium leading-none text-stone-400 dark:text-stone-500">
@@ -179,9 +217,9 @@ export const SetRow: React.FC<SetRowProps> = ({
           inputMode="numeric"
           value={repsText}
           onChange={e => handleReps(e.target.value)}
-          placeholder={suggestion ? String(suggestion.reps) : '0'}
+          placeholder={prefillReps ?? '0'}
           aria-label={`Set ${index} reps`}
-          className={`${numberInputClass} ${settled ? 'border-transparent bg-transparent' : ''}`}
+          className={`${numberInputClass} ${prefillReps ? prefillClass : ''} ${settled ? 'border-transparent bg-transparent' : ''}`}
         />
 
         {showRpe && (
@@ -198,10 +236,18 @@ export const SetRow: React.FC<SetRowProps> = ({
 
         <button
           type="button"
-          onClick={() => onChange({ completed: !set.completed })}
+          onClick={handleComplete}
           disabled={!canComplete && !set.completed}
           aria-pressed={set.completed}
-          aria-label={set.completed ? `Set ${index} completed. Activate to undo.` : `Mark set ${index} as completed`}
+          aria-label={
+            set.completed
+              ? `Set ${index} completed. Activate to undo.`
+              : set.reps > 0
+                ? `Mark set ${index} as completed`
+                : prefillReps
+                  ? `Log set ${index} as ${prefillWeight ? `${prefillWeight} ${unitLabel} ` : ''}${prefillReps} reps`
+                  : `Mark set ${index} as completed. Enter reps first.`
+          }
           title={canComplete || set.completed ? undefined : 'Enter reps first'}
           className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-jade-500 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-50 dark:focus-visible:ring-offset-stone-950 disabled:opacity-40 ${
             set.completed
