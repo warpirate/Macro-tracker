@@ -70,6 +70,44 @@ export const client = new OpenAI({
 })
 
 /**
+ * How long Vercel's edge runtime lets an invocation live before it is killed and the caller
+ * gets a `FUNCTION_INVOCATION_TIMEOUT` 504.
+ *
+ * Every handler in this directory declares `runtime: 'edge'`, so this is the ceiling all of
+ * them work under. It is written down rather than remembered because forgetting it is not a
+ * degraded response, it is a 504 with a Vercel trace ID in the user's face.
+ */
+export const EDGE_LIMIT_MS = 25000
+
+/**
+ * Request options that cannot outlive the edge runtime.
+ *
+ * TWO THINGS GO WRONG WITHOUT THIS, and both have shipped:
+ *
+ * 1. `maxRetries` defaults to 2 and the SDK applies `timeout` PER ATTEMPT, not per call. So
+ *    `{ timeout: 20000, maxRetries: 1 }` — which reads like a 20s cap — is really a ~41s
+ *    cap, and `/api/recommend` returned a 504 on precisely the slow-model case its local
+ *    fallback was written to survive. The catch block never ran; the platform got there
+ *    first.
+ *
+ * 2. `timeout` defaults to 600000 (ten minutes). A handler that passes no options at all is
+ *    not "using a sensible default", it is promising to wait twenty-four times longer than
+ *    the runtime will allow. `chat.ts` and `analyze-photo.ts` both did.
+ *
+ * `signal` is belt to the timeout's braces: it is enforced by the platform's own fetch
+ * rather than by the SDK, so it still holds if a future SDK version reinterprets `timeout`.
+ *
+ * @param timeoutMs budget for ONE attempt. Leave headroom: the handler still has to parse,
+ *   validate and serialise after the model returns.
+ */
+export const modelRequestOptions = (timeoutMs: number) => ({
+  timeout: timeoutMs,
+  // Never raise this. A retry inside a 25s budget is a 504 wearing a helpful disguise.
+  maxRetries: 0,
+  signal: AbortSignal.timeout(timeoutMs + 1000),
+})
+
+/**
  * Throws a message a human can act on when the deployment has no key.
  *
  * Call at the top of every handler. Without it the request reaches Nebius and comes back

@@ -1,6 +1,19 @@
-import { client, VISION_MODEL, requireApiKey } from './_nebius'
+import { client, VISION_MODEL, modelRequestOptions, requireApiKey } from './_nebius'
 
 export const config = { runtime: 'edge' }
+
+/*
+  Vision over a base64 upload is the slowest call in the app, and it passed no request
+  options at all — so the SDK's defaults (`timeout: 600000`, `maxRetries: 2`) governed a
+  function the edge runtime kills at 25s. A slow model could not fail gracefully; it could
+  only be terminated, and the client saw a `FUNCTION_INVOCATION_TIMEOUT` 504.
+
+  18s leaves room for the upload to finish arriving and for the JSON parse afterwards.
+  Unlike /api/recommend there is no local fallback to protect here: a photo nobody looked at
+  cannot be estimated on-device, so the budget goes to giving the model its best chance
+  rather than to reserving time for a plan B that does not exist.
+*/
+const VISION_TIMEOUT_MS = 18000
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
@@ -53,7 +66,7 @@ Use accurate USDA-based values. Account for cooking methods (oil, butter). If mu
           },
         ],
       }],
-    })
+    }, modelRequestOptions(VISION_TIMEOUT_MS))
 
     const text = response.choices[0]?.message?.content ?? '[]'
     let foods: unknown[] = []

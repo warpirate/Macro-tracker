@@ -1,7 +1,24 @@
 import type OpenAI from 'openai'
-import { client, CHAT_MODEL, requireApiKey } from './_nebius'
+import { client, CHAT_MODEL, modelRequestOptions, requireApiKey } from './_nebius'
 
 export const config = { runtime: 'edge' }
+
+/*
+  Chat is the only handler here that makes TWO sequential model calls: one to pick tools,
+  then one to write the closing summary once the tool results are known. Both live inside
+  the same 25s edge invocation, so they share the budget rather than each getting it.
+
+  Neither call passed options at all before this, which meant the SDK's own defaults —
+  `timeout: 600000, maxRetries: 2` — governed a function the platform kills at 25s. A slow
+  first call could not degrade; it could only 504.
+
+  The split is uneven on purpose. The first call reasons over the whole conversation and
+  emits up to 2048 tokens of tool calls; the second only writes prose over results it has
+  already been handed, capped at 512. Splitting evenly would starve the half that does the
+  work.
+*/
+const TOOL_CALL_TIMEOUT_MS = 13000
+const SUMMARY_TIMEOUT_MS = 7000
 
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -98,6 +115,21 @@ function toolResultText(name: string, input: Record<string, unknown>): string {
   return 'Done.'
 }
 
+/**
+ * A plain summary of what the tools did, for when the model cannot write one.
+ *
+ * Deliberately not a fake assistant voice. The model's summary is a coached sentence; this
+ * is a receipt, and reading like a receipt is the honest signal that the coach did not get
+ * to speak. What matters is that the user can see exactly what landed in their diary — the
+ * alternative on this path was an error that threw the logging away.
+ */
+function describeActions(
+  parsed: ReadonlyArray<{ name: string; input: Record<string, unknown> }>,
+): string {
+  const lines = parsed.map(p => toolResultText(p.name, p.input))
+  return lines.length === 1 ? lines[0] : lines.map(line => `• ${line}`).join('\n')
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
@@ -173,12 +205,15 @@ OTHER:
     ]
 
     // First turn
-    const response = await client.chat.completions.create({
-      model: CHAT_MODEL,
-      max_tokens: 2048,
-      tools,
-      messages: convo,
-    })
+    const response = await client.chat.completions.create(
+      {
+        model: CHAT_MODEL,
+        max_tokens: 2048,
+        tools,
+        messages: convo,
+      },
+      modelRequestOptions(TOOL_CALL_TIMEOUT_MS),
+    )
 
     const assistantMsg = response.choices[0]?.message
     const toolCalls = (assistantMsg?.tool_calls ?? []) as OpenAI.Chat.Completions.ChatCompletionMessageToolCall[]
@@ -199,21 +234,43 @@ OTHER:
 
     let finalText = ''
     if (parsed.length > 0) {
-      // Feed tool results back so the model can write its closing summary
-      const followUp = await client.chat.completions.create({
-        model: CHAT_MODEL,
-        max_tokens: 512,
-        messages: [
-          ...convo,
-          assistantMsg!,
-          ...parsed.map(p => ({
-            role: 'tool' as const,
-            tool_call_id: p.id,
-            content: toolResultText(p.name, p.input),
-          })),
-        ],
-      })
-      finalText = followUp.choices[0]?.message?.content ?? ''
+      /*
+        The tool calls are already parsed and already in `actions` at this point, so the
+        work the user asked for is done. Only the sentence describing it is outstanding.
+
+        This call therefore gets its own try/catch instead of riding the handler's. Letting
+        it reach the outer catch returns a 500 and discards `actions` wholesale — the model
+        logged the food, the summary timed out, and the client is told the turn failed. The
+        user retypes it, and the second attempt logs everything twice.
+
+        Losing the prose is a worse sentence. Losing the actions is lost data.
+      */
+      try {
+        const followUp = await client.chat.completions.create(
+          {
+            model: CHAT_MODEL,
+            max_tokens: 512,
+            messages: [
+              ...convo,
+              assistantMsg!,
+              ...parsed.map(p => ({
+                role: 'tool' as const,
+                tool_call_id: p.id,
+                content: toolResultText(p.name, p.input),
+              })),
+            ],
+          },
+          modelRequestOptions(SUMMARY_TIMEOUT_MS),
+        )
+        finalText = followUp.choices[0]?.message?.content ?? ''
+      } catch {
+        finalText = ''
+      }
+      // Covers both a failed call and a model that returned an empty string. The client
+      // treats "no text and no actions" as a failed turn, so a summary-less success has to
+      // say something — and it says what was actually done, not what the model would have
+      // said about it.
+      if (finalText.trim().length === 0) finalText = describeActions(parsed)
     } else {
       finalText = assistantMsg?.content ?? ''
     }

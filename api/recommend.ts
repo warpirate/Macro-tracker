@@ -1,4 +1,4 @@
-import { API_KEY, client, CHAT_MODEL } from './_nebius'
+import { API_KEY, client, CHAT_MODEL, modelRequestOptions } from './_nebius'
 import { buildLocalRecommendation, clampRecommendationNumbers } from '../src/utils/localRecommendation'
 import type {
   BodyComposition,
@@ -13,8 +13,24 @@ import type {
 
 export const config = { runtime: 'edge' }
 
-/** Give up on the model well inside Vercel's edge limit so the fallback still ships. */
-const MODEL_TIMEOUT_MS = 20000
+/**
+ * Give up on the model well inside Vercel's edge limit so the fallback still ships.
+ *
+ * The runtime kills an invocation at EDGE_LIMIT_MS (25s), and this handler has a local plan
+ * ready to serve, so the arithmetic is what makes the fallback reachable rather than
+ * theoretical:
+ *
+ *   12s  one model attempt
+ *  + ~2s  prompt assembly, JSON parse, validation, response write
+ *  = 14s, leaving 11s of headroom for a cold start or a slow network.
+ *
+ * This shipped as `{ timeout: 20000, maxRetries: 1 }`, which reads like a 20s cap and is
+ * really ~41s, because the SDK applies `timeout` per attempt. Every first-attempt timeout —
+ * exactly the case this fallback exists for — became a user-facing
+ * `FUNCTION_INVOCATION_TIMEOUT` 504 instead of a local plan. `modelRequestOptions` in
+ * ./_nebius now owns that constraint for all three handlers.
+ */
+const MODEL_TIMEOUT_MS = 12000
 
 /** Bounds from SPEC-COACH-AND-WORKOUT.md 1.3 that the shared clamp helper does not cover. */
 const RATE_MIN_KG_PER_WEEK = -1.5
@@ -462,7 +478,7 @@ export default async function handler(req: Request): Promise<Response> {
           { role: 'user', content: 'Give me my next phase as JSON.' },
         ],
       },
-      { timeout: MODEL_TIMEOUT_MS, maxRetries: 1 },
+      modelRequestOptions(MODEL_TIMEOUT_MS),
     )
 
     const text = response.choices[0]?.message?.content ?? ''
