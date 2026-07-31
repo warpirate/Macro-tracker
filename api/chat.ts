@@ -156,19 +156,76 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'messages array required' }), { status: 400 })
   }
 
-  const todayEntries = (context?.todayEntries as Array<{ id: string; name: string; meal: string; calories: number }> | undefined) ?? []
+  interface ContextEntry {
+    id: string
+    name: string
+    meal: string
+    calories: number
+    protein?: number
+    carbs?: number
+    fat?: number
+  }
+
+  const todayEntries = (context?.todayEntries as ContextEntry[] | undefined) ?? []
+
+  /*
+    Macros per entry, where the client sent them.
+
+    They used to be omitted, so the model saw "Lemon rice (Lunch, 320 kcal)" and had to invent a
+    protein figure from the name. It did, it flagged that it was estimating, and it was wrong —
+    all while the exact number existed in the app. Older clients still send calories only, hence
+    the conditional rather than a required field.
+  */
+  const describeEntry = (e: ContextEntry): string => {
+    const macros =
+      e.protein === undefined && e.carbs === undefined && e.fat === undefined
+        ? ''
+        : `, P${Math.round(e.protein ?? 0)}g C${Math.round(e.carbs ?? 0)}g F${Math.round(e.fat ?? 0)}g`
+    return `  - [${e.id}] ${e.name} (${e.meal}, ${Math.round(e.calories)} kcal${macros})`
+  }
+
   const entriesList = todayEntries.length > 0
-    ? todayEntries.map(e => `  - [${e.id}] ${e.name} (${e.meal}, ${Math.round(e.calories)} kcal)`).join('\n')
+    ? todayEntries.map(describeEntry).join('\n')
     : '  (none yet)'
+
+  const goals = {
+    calories: context?.goals?.calories ?? 2000,
+    protein: context?.goals?.protein ?? 150,
+    carbs: context?.goals?.carbs ?? 200,
+    fat: context?.goals?.fat ?? 65,
+  }
+
+  /*
+    Totals, computed by the app rather than by the model.
+
+    `consumed` is authoritative and arrives already summed by the same function the diary and
+    dashboard use, so the three cannot disagree. Falling back to `todayCalories` keeps a client
+    that predates this field working, with calories right and macros absent rather than guessed.
+  */
+  const consumed = (context?.consumed as
+    | { calories: number; protein: number; carbs: number; fat: number; fiber: number }
+    | undefined) ?? {
+    calories: context?.todayCalories ?? 0,
+    protein: todayEntries.reduce((sum, e) => sum + (e.protein ?? 0), 0),
+    carbs: todayEntries.reduce((sum, e) => sum + (e.carbs ?? 0), 0),
+    fat: todayEntries.reduce((sum, e) => sum + (e.fat ?? 0), 0),
+    fiber: 0,
+  }
+
+  const left = (goal: number, eaten: number): number => Math.round(goal - eaten)
 
   const systemPrompt = `You are a friendly fitness and nutrition assistant built into a macro tracker app called MacroFit.
 
 USER CONTEXT:
-- Calorie goal: ${context?.goals?.calories ?? 2000} kcal/day
-- Protein goal: ${context?.goals?.protein ?? 150}g | Carbs: ${context?.goals?.carbs ?? 200}g | Fat: ${context?.goals?.fat ?? 65}g
-- Calories logged today: ${context?.todayCalories ?? 0} kcal
 - Current weight: ${context?.currentWeight ?? 'not set'}
 - Weight unit preference: ${context?.weightUnit ?? 'lbs'}
+
+TODAY SO FAR — these figures are exact, computed by the app. Use them as given. Never
+recalculate them from the entry list and never describe them as estimates or approximations:
+- Calories: goal ${goals.calories} kcal, consumed ${Math.round(consumed.calories)} kcal, remaining ${left(goals.calories, consumed.calories)} kcal
+- Protein: goal ${goals.protein}g, consumed ${Math.round(consumed.protein)}g, remaining ${left(goals.protein, consumed.protein)}g
+- Carbs: goal ${goals.carbs}g, consumed ${Math.round(consumed.carbs)}g, remaining ${left(goals.carbs, consumed.carbs)}g
+- Fat: goal ${goals.fat}g, consumed ${Math.round(consumed.fat)}g, remaining ${left(goals.fat, consumed.fat)}g
 
 TODAY'S LOGGED ENTRIES (with IDs):
 ${entriesList}
@@ -194,7 +251,21 @@ OTHER:
 10. When the user mentions their weight, call log_weight.
 11. When the user mentions drinking water or any fluid, call log_water.
 12. After using tools, give a short friendly summary of what was logged.
-13. If the user asks a general nutrition question, answer it — do not log anything.`
+13. If the user asks a general nutrition question, answer it — do not log anything.
+
+HOW TO WRITE THE REPLY — this is a chat bubble on a phone, about 300 points wide:
+14. Answer in at most six short lines. The user asked one question; answer that question first,
+    in the first line, as a number they can act on.
+15. NEVER use Markdown tables. Pipes and dashes do not render here — they arrive as literal
+    punctuation and are unreadable at this width. State figures in a sentence or a short bullet.
+16. NEVER use headings (#, ##, ###). A reply this short has nothing to organise, and the heading
+    markers show up as literal hash characters.
+17. **Bold** is supported and renders. Use it only on the number that answers the question.
+18. Bullets starting "- " are supported. Keep them to one line each.
+19. Do not restate the arithmetic you were given. "634 kcal left" is the answer; a breakdown of
+    how 1034 minus 400 reaches it is padding the user already understands.
+20. Do not include disclaimers about estimates when using the TODAY SO FAR figures. They are
+    exact, and hedging on them makes the app look unsure of data it is certain about.`
 
   try {
     const actions: Array<{ tool: string; input: Record<string, unknown> }> = []
