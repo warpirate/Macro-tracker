@@ -8,3 +8,7 @@ dev-dist
 .playwright-mcp
 .vercel
 
+
+# Sideloaded builds copied here by hand. Never commit one: it is tens of megabytes and it
+# would stay in history permanently.
+*.apk

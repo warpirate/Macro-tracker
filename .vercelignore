@@ -8,3 +8,7 @@ dev-dist
 .playwright-mcp
 supabase/.temp
 mobile
+
+# Build artefacts that sometimes land here by hand. An APK is never part of the web deploy,
+# and uploading one costs the whole file on every deployment.
+*.apk
