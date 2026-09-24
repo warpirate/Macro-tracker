@@ -35,6 +35,7 @@ const SYNC_FIELDS = [
   'darkMode', 'bodyMeasurements', 'fastingSession', 'progressPhotos',
   'recommendation', 'recommendationSeenAt', 'onboardedAt',
   'workoutLog', 'customLifts', 'workoutTemplates', 'activeWorkoutId',
+  'trainingPrograms', 'activeProgramId',
 ] as const
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
