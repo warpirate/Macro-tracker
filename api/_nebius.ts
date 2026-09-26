@@ -58,8 +58,18 @@ export const BASE_URL = usableUrl(read(process.env.NEBIUS_BASE_URL)) ?? DEFAULT_
 /** Tool-calling model used by the chat assistant. */
 export const CHAT_MODEL = read(process.env.NEBIUS_CHAT_MODEL) ?? 'Qwen/Qwen3-235B-A22B-Instruct-2507'
 
-/** Vision model used for meal photo analysis. */
-export const VISION_MODEL = read(process.env.NEBIUS_VISION_MODEL) ?? 'Qwen/Qwen2.5-VL-72B-Instruct'
+/**
+ * Vision model used for meal photo analysis.
+ *
+ * Was Qwen2.5-VL-72B until Nebius retired it (2026-09): the API answered "model does not
+ * exist" and every meal photo failed. Kimi K3 won the South Indian photo eval
+ * (scripts/eval-photos.ts) once its thinking was switched off, see api/_photo.ts. Re-run that
+ * eval before changing this; Nebius lists models that reject images outright.
+ *
+ * NOTE: a NEBIUS_VISION_MODEL set in the Vercel dashboard overrides this default. If it still
+ * names the retired Qwen model, photo logging stays broken until it is changed or removed.
+ */
+export const VISION_MODEL = read(process.env.NEBIUS_VISION_MODEL) ?? 'moonshotai/Kimi-K3'
 
 /** The key is the one value with no safe default — fail naming it, not "Invalid URL". */
 export const API_KEY = read(process.env.NEBIUS_API_KEY)
@@ -124,3 +134,14 @@ export const requireApiKey = (): string => {
   }
   return API_KEY
 }
+
+/**
+ * Sent with every model request: tells a thinking model to answer directly.
+ *
+ * Kimi K3 is the most accurate model on our South Indian photo set, but with thinking on it
+ * took 15-22 seconds and, on three photos in five, spent its whole token budget thinking and
+ * returned nothing. With thinking off it answered the same plates in about 3 seconds and got
+ * them right. `chat_template_kwargs` is the vLLM convention Nebius serves; models whose
+ * template has no `thinking` switch ignore it.
+ */
+export const NO_THINKING = { chat_template_kwargs: { thinking: false } } as const
