@@ -27,7 +27,8 @@ import {
 import { v4 as uuidv4 } from 'uuid'
 import { useStore } from '../store/useStore'
 import { useAuth } from '../contexts/AuthContext'
-import { uploadProgressPhoto, deleteProgressPhoto } from '../lib/storage'
+import { uploadProgressPhoto, deleteProgressPhoto, isInlinePhoto, isSignedInAs } from '../lib/storage'
+import { ProgressPhotoImage } from '../components/ProgressPhotoImage'
 import { Navbar } from '../components/Layout/Navbar'
 import {
   calculateBMI,
@@ -37,7 +38,7 @@ import {
   formatDate,
   getTodayString,
 } from '../utils/calculations'
-import { ActivityLevel, WeightGoal, UserProfile, PhotoPose, MealTemplate } from '../types'
+import { ActivityLevel, WeightGoal, UserProfile, PhotoPose, MealTemplate, ProgressPhoto } from '../types'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -103,6 +104,12 @@ const ROW = 'flex items-center justify-between gap-3 border-b border-stone-200 d
 /* Header of a .card-flush list: sits above the first row, so it owns the hairline below it. */
 const LIST_HEADER = 'flex items-center justify-between gap-2 border-b border-stone-200 dark:border-stone-800 px-4 py-3'
 
+/**
+ * Gallery size. appState's addProgressPhoto evicts the oldest entry past this, which drops
+ * the entry but not its file, so the page refuses a new photo at the limit instead.
+ */
+const PHOTO_LIMIT = 20
+
 const templateCalories = (template: MealTemplate): number =>
   Math.round(template.entries.reduce((sum, entry) => sum + (entry.food?.calories ?? 0) * entry.servings, 0))
 
@@ -147,8 +154,10 @@ export const Profile: React.FC = () => {
   const [newBodyFat, setNewBodyFat] = useState('')
   const [saved, setSaved] = useState(false)
   const [showCustomFoodForm, setShowCustomFoodForm] = useState(false)
-  const [viewPhoto, setViewPhoto] = useState<string | null>(null)
+  const [viewPhoto, setViewPhoto] = useState<ProgressPhoto | null>(null)
   const [photoUploading, setPhotoUploading] = useState(false)
+  const [deletingPhotoIds, setDeletingPhotoIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [photoDeleteError, setPhotoDeleteError] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const [photoNote, setPhotoNote] = useState('')
   const [photoPose, setPhotoPose] = useState<PhotoPose>('front')
@@ -181,6 +190,32 @@ export const Profile: React.FC = () => {
     recalculateGoals()
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  const handleDeletePhoto = async (p: ProgressPhoto) => {
+    setPhotoDeleteError(null)
+    if (isInlinePhoto(p.dataUrl)) {
+      // The entry IS the photo, so removing it is the delete, offline included. The canonical
+      // path is still cleared, best effort, for an upload that landed but lost its response
+      // (see deleteProgressPhoto); refusing an offline delete over that rare leftover would
+      // cost more than it saves.
+      removeProgressPhoto(p.id)
+      if (user) void deleteProgressPhoto(user.id, p.id, p.dataUrl)
+      return
+    }
+    if (!user) return
+    // A photo in the bucket keeps its entry until Storage confirms the file is gone. The
+    // entry is the only handle on that file: dropped first, a failed delete (offline, a lost
+    // session) would leave a body photo stored that no screen can show or delete.
+    setDeletingPhotoIds(prev => new Set(prev).add(p.id))
+    const deleted = await deleteProgressPhoto(user.id, p.id, p.dataUrl)
+    setDeletingPhotoIds(prev => {
+      const next = new Set(prev)
+      next.delete(p.id)
+      return next
+    })
+    if (deleted) removeProgressPhoto(p.id)
+    else setPhotoDeleteError('Could not delete that photo. Check you are online, then try again.')
   }
 
   const handleLogWeight = () => {
@@ -668,14 +703,23 @@ export const Profile: React.FC = () => {
                   try {
                     const photoId = uuidv4()
                     const dataUrl = await compressImage(file)
-                    // Try Supabase Storage first; fall back to base64 if not configured
-                    const storageUrl = user
+                    // Try the private bucket first and keep only a reference to it (never a
+                    // URL, see lib/storage.ts); fall back to inline base64 when signed out or
+                    // the upload fails, so the photo is never lost.
+                    const storageRef = user
                       ? await uploadProgressPhoto(user.id, photoId, dataUrl)
                       : null
+                    // Sign-out can land during those awaits, and it wipes the store: a photo
+                    // added now would sit in the empty store the next account inherits. A
+                    // sign-out that won the auth lock also makes the upload fail, so it would
+                    // be the inline body photo itself. Checked in the same tick as the write.
+                    // A file that did upload stays in the uploader's private folder; no session
+                    // is left here that could delete it.
+                    if (user && !isSignedInAs(user.id)) return
                     addProgressPhoto({
                       id: photoId,
                       date: getTodayString(),
-                      dataUrl: storageUrl ?? dataUrl,
+                      dataUrl: storageRef ?? dataUrl,
                       pose: photoPose,
                       notes: photoNote || undefined,
                     })
@@ -689,7 +733,7 @@ export const Profile: React.FC = () => {
               <button
                 type="button"
                 onClick={() => photoInputRef.current?.click()}
-                disabled={photoUploading}
+                disabled={photoUploading || progressPhotos.length >= PHOTO_LIMIT}
                 className="btn-primary w-full"
               >
                 {photoUploading
@@ -697,10 +741,12 @@ export const Profile: React.FC = () => {
                   : <><Plus className="h-4 w-4" aria-hidden="true" /> Take / upload photo</>
                 }
               </button>
-              {progressPhotos.length >= 18 && (
+              {progressPhotos.length >= PHOTO_LIMIT - 2 && (
                 <p className={`flex items-center justify-center gap-1.5 text-xs font-semibold ${TONE_TEXT.warning}`}>
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  Near the 20-photo limit. Remove old photos to add more.
+                  {progressPhotos.length >= PHOTO_LIMIT
+                    ? `Gallery full at ${PHOTO_LIMIT} photos. Delete one to add another.`
+                    : `Near the ${PHOTO_LIMIT}-photo limit. Remove old photos to add more.`}
                 </p>
               )}
             </section>
@@ -720,9 +766,15 @@ export const Profile: React.FC = () => {
                   <h3 className="section-title mb-0">Gallery</h3>
                   <span className="pill">
                     <span className="font-display tabular-nums">{progressPhotos.length}</span>
-                    <span className="font-normal text-stone-500 dark:text-stone-400">of 20</span>
+                    <span className="font-normal text-stone-500 dark:text-stone-400">of {PHOTO_LIMIT}</span>
                   </span>
                 </div>
+                {photoDeleteError && (
+                  <p role="alert" className={`flex items-center gap-1.5 text-xs font-semibold ${TONE_TEXT.critical}`}>
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    {photoDeleteError}
+                  </p>
+                )}
                 <div
                   className={`grid gap-2 ${
                     progressPhotos.length === 1 ? 'max-w-xs grid-cols-1' : 'grid-cols-2 sm:grid-cols-3'
@@ -735,12 +787,12 @@ export const Profile: React.FC = () => {
                     >
                       <button
                         type="button"
-                        onClick={() => setViewPhoto(p.dataUrl)}
+                        onClick={() => setViewPhoto(p)}
                         aria-label={`View ${p.pose} photo from ${formatDate(p.date)}`}
                         className="block h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-jade-500"
                       >
-                        <img
-                          src={p.dataUrl}
+                        <ProgressPhotoImage
+                          stored={p.dataUrl}
                           alt={`${p.pose} progress photo from ${formatDate(p.date)}`}
                           className="h-full w-full object-cover"
                         />
@@ -751,15 +803,16 @@ export const Profile: React.FC = () => {
                       </figcaption>
                       <button
                         type="button"
-                        onClick={() => {
-                          removeProgressPhoto(p.id)
-                          if (user) deleteProgressPhoto(user.id, p.id)
-                        }}
+                        onClick={() => void handleDeletePhoto(p)}
+                        disabled={deletingPhotoIds.has(p.id)}
+                        aria-busy={deletingPhotoIds.has(p.id)}
                         aria-label={`Delete ${p.pose} photo from ${formatDate(p.date)}`}
                         className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-jade-500"
                       >
                         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-stone-950/60 text-white transition-colors duration-150 hover:bg-[#B91C1C]">
-                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          {deletingPhotoIds.has(p.id)
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                            : <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}
                         </span>
                       </button>
                     </figure>
@@ -773,11 +826,16 @@ export const Profile: React.FC = () => {
               <div
                 role="dialog"
                 aria-modal="true"
-                aria-label="Progress photo"
+                aria-label={`${viewPhoto.pose} progress photo from ${formatDate(viewPhoto.date)}`}
                 className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/95 p-4 animate-fade-in"
                 onClick={() => setViewPhoto(null)}
               >
-                <img src={viewPhoto} alt="Progress photo" className="max-h-full max-w-full object-contain" />
+                <ProgressPhotoImage
+                  stored={viewPhoto.dataUrl}
+                  alt={`${viewPhoto.pose} progress photo from ${formatDate(viewPhoto.date)}`}
+                  variant="viewer"
+                  className="max-h-full max-w-full object-contain"
+                />
                 <button
                   type="button"
                   onClick={() => setViewPhoto(null)}
