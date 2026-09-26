@@ -52,6 +52,19 @@ Easiest path is the GitHub integration — no CLI, no tokens:
    Anything prefixed `VITE_` is **inlined into the JavaScript bundle** and is public.
    `NEBIUS_API_KEY` has no prefix precisely so it stays server-side, readable only by the
    edge functions in `api/`.
+
+   **`AI_AUTH`** (server only) controls the sign-in gate on the AI endpoints
+   (`api/_auth.ts`). Unset means required: no signed-in token, no coach. Android builds
+   before the one that sends a token cannot pass it, and they only go away as people
+   install a newer APK. So, the first time this gate ships:
+   1. Publish the mobile release that sends the token (it works against the old server too).
+   2. Set `AI_AUTH=soft` **before** the first deploy containing `api/_auth.ts`. Signed-in
+      calls are checked and rate-limited; calls without a token still pass, and the logs
+      tally them (`[ai-auth] AI_AUTH=soft let through ...`) once a minute.
+   3. Delete `AI_AUTH` and redeploy once that tally is down to what you are willing to cut off.
+
+   Deploying with it unset skips to step 3 and shuts the coach for every older APK.
+   `AI_AUTH=off` removes the gate entirely, for emergencies.
 4. Deploy, then add the deployment URL to Supabase under
    **Authentication → URL Configuration → Site URL / Redirect URLs**, or email
    confirmation and magic links will bounce back to `localhost`.
@@ -68,7 +81,8 @@ npx vercel --prod
 ## 3. Verify the deployment
 
 ```bash
-# should return 400 (a request with no bodyweight is rejected), NOT 404 or 500
+# should return 401 (no sign-in token), or 400 while AI_AUTH is soft or off (a request
+# with no bodyweight is rejected); NOT 404 or 500
 curl -s -o /dev/null -w "%{http_code}\n" -X POST https://<your-app>/api/recommend \
   -H "Content-Type: application/json" -d '{}'
 
@@ -77,7 +91,7 @@ curl -s -o /dev/null -w "%{http_code}\n" https://<your-app>/api/chat
 ```
 
 `404` means the functions were not deployed; `500` usually means `NEBIUS_API_KEY` is
-missing. Then sign up in the browser and confirm the sync indicator reaches "Saved".
+missing, or the Supabase variables are (the body names which). Then sign up in the browser and confirm the sync indicator reaches "Saved".
 
 ## 4. Mobile app
 

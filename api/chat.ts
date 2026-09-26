@@ -1,5 +1,6 @@
 import type OpenAI from 'openai'
 import { client, CHAT_MODEL, modelRequestOptions, NO_THINKING, requireApiKey } from './_nebius'
+import { requireAiCaller } from './_auth'
 import {
   buildCoachPrompt,
   COACH_TOOLS,
@@ -44,10 +45,31 @@ function describeActions(actions: ReadonlyArray<CoachAction>): string {
 /** History turns the client may send; anything else is dropped rather than trusted. */
 const MAX_HISTORY = 24
 
+/*
+  Size caps. The rate limit counts calls, but the caller decides how big each call is, so
+  without these one "call" could carry a megabyte of history and cost like a hundred.
+
+  MAX_INPUT_CHARS is measured on what reaches the model, the trimmed history plus the data
+  pack, not on the raw body. Trimming already bounds the history, and a client that sends
+  more than the server keeps loses its oldest turns silently, as it always has. Measured on
+  the raw body, the cap turned a web tab left open long enough into a 413 on every message
+  from then on, each refusal becoming one more turn in the next request. After trimming, a
+  real request is 24 short turns and a data pack of a few kilobytes, far below the cap
+  however long the session; what is still refused is a data pack or a run of pasted turns
+  built to fill the model's context. Parsing first is safe: only a verified, rate-limited
+  caller gets this far, and the platform caps the body at a few megabytes.
+*/
+const MAX_INPUT_CHARS = 120_000
+const MAX_TURN_CHARS = 4_000
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
   }
+
+  // Signed-in users only, within their limits. See ./_auth for why and how.
+  const caller = await requireAiCaller(req, 'chat')
+  if (caller instanceof Response) return caller
 
   try {
     requireApiKey()
@@ -79,7 +101,16 @@ export default async function handler(req: Request): Promise<Response> {
         (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim().length > 0,
     )
     .slice(-MAX_HISTORY)
-    .map(m => ({ role: m.role, content: m.content }) as OpenAI.Chat.Completions.ChatCompletionMessageParam)
+    .map(m => ({ role: m.role, content: m.content.slice(0, MAX_TURN_CHARS) }) as OpenAI.Chat.Completions.ChatCompletionMessageParam)
+
+  if (JSON.stringify({ history, context }).length > MAX_INPUT_CHARS) {
+    return new Response(
+      JSON.stringify({
+        error: 'That conversation is too long to send. Clear it from the coach menu, or reload the page on the web, then try again.',
+      }),
+      { status: 413, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
 
   const lastUser = [...history].reverse().find(m => m.role === 'user')
   const lastUserMessage = typeof lastUser?.content === 'string' ? lastUser.content : ''

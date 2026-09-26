@@ -1,93 +1,36 @@
--- Run this in your Supabase project → SQL Editor
-
--- 1. User data table (one row per user, full app state as JSONB)
-CREATE TABLE IF NOT EXISTS public.user_data (
-  user_id  UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-  data     JSONB NOT NULL DEFAULT '{}',
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 2. Row Level Security — each user can only see their own row
-ALTER TABLE public.user_data ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users manage own data"
-  ON public.user_data
-  FOR ALL
-  USING  (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
-
--- 2b. Table privileges. RLS decides WHICH ROWS a role may touch, but Postgres still
--- checks table-level privileges first — without this GRANT every request fails with
--- "permission denied for table user_data" (42501) and the app reports a sync error,
--- even though the policy above is correct. Depending on how the table was created,
--- the default privileges may not cover DML, so grant it explicitly.
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_data TO authenticated;
-
--- 3. Auto-update the updated_at timestamp
-CREATE OR REPLACE FUNCTION public.update_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER user_data_updated_at
-  BEFORE UPDATE ON public.user_data
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
-
 -- ============================================================
--- Progress Photos — Supabase Storage bucket + RLS policies
--- ============================================================
-
--- 4. Create storage bucket. PRIVATE: these are body photos, and a public bucket serves
---    every object to anyone holding its URL with no auth check. The app stores a path
---    reference and shows photos through short-lived signed URLs (src/lib/storage.ts).
---    Existing projects: apply supabase/migrations/20260926000000_private_progress_photos.sql
---    instead, in the two steps its ROLLOUT note describes (this file is for a new project).
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('progress-photos', 'progress-photos', false)
-ON CONFLICT (id) DO UPDATE SET public = false;
-
--- 5. Storage policies (photos are scoped to the uploading user)
---    Path convention: {userId}/{photoId}.jpg
-
-CREATE POLICY "Users upload own photos"
-  ON storage.objects FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    bucket_id = 'progress-photos'
-    AND auth.uid()::text = (string_to_array(name, '/'))[1]
-  );
-
-CREATE POLICY "Users delete own photos"
-  ON storage.objects FOR DELETE
-  TO authenticated
-  USING (
-    bucket_id = 'progress-photos'
-    AND auth.uid()::text = (string_to_array(name, '/'))[1]
-  );
-
--- Owner-only read. Storage mints a signed URL only for a caller this lets read the object,
--- and upload/delete rely on it too (Storage returns the affected row, which must be readable).
-CREATE POLICY "Users read own photos"
-  ON storage.objects FOR SELECT
-  TO authenticated
-  USING (
-    bucket_id = 'progress-photos'
-    AND auth.uid()::text = (string_to_array(name, '/'))[1]
-  );
-
--- ============================================================
--- AI usage counters — per-user rate limit behind the AI endpoints
+-- AI usage counters — the per-user rate limit behind the AI endpoints
 -- ============================================================
 --
--- api/_auth.ts bumps these on every /api/chat, /api/analyze-photo and /api/recommend call
--- and answers 429 past the ceilings in its AI_LIMITS. Copied from
--- supabase/migrations/20260926000100_ai_usage.sql, which explains the design; change the
--- two together. Existing projects: apply that migration instead.
+-- WHY THIS EXISTS
+-- /api/chat, /api/analyze-photo and /api/recommend spend the owner's Nebius key on every
+-- call. api/_auth.ts now requires a signed-in user, but a signed-in user with a script can
+-- still run up the bill, so each call also bumps a counter here and the handler refuses
+-- with a 429 once a per-minute or per-day ceiling is passed. The ceilings themselves live
+-- in api/_auth.ts (AI_LIMITS), not here, so changing them is a deploy, not a migration.
+--
+-- WHY POSTGRES AND NOT MEMORY
+-- Edge functions keep nothing between invocations that can be trusted: every region and
+-- every recycled isolate starts from zero. The database is the one place every invocation
+-- shares, and the project already has it.
+--
+-- IF THIS MIGRATION IS NOT APPLIED
+-- The endpoints keep working. api/_auth.ts treats a missing function (or a slow or failing
+-- one) as "the database cannot count" and falls back to a per-instance count kept in memory,
+-- held to the same ceilings and logged once a minute per instance, because an unapplied
+-- migration must not take the coach down. That fallback is looser than this table (each
+-- instance counts on its own), so apply the migration. Sign-in is enforced either way.
+--
+-- WHY THERE IS NO PROJECT-WIDE CEILING HERE
+-- These counters are per user. A shared "all users, today" counter would bound the total
+-- bill, but bump_ai_usage() is callable directly through PostgREST by any signed-in user,
+-- and every call counts. So a shared counter would let one account burn the whole project's
+-- allowance with a loop against /rest/v1/rpc/bump_ai_usage, without spending a cent at
+-- Nebius, and turn the coach off for everyone. Doing it safely needs the per-user ceilings
+-- enforced in here, before the shared counter moves. Until then the total is bounded where
+-- it is cheapest to bound: sign-up (email confirmation, captcha) and a spend cap at Nebius.
 
--- 6. One row per user, per endpoint, per window.
+-- 1. One row per user, per endpoint, per window.
 --    `span` says which window the row counts ('minute' or 'day'); `bucket_start` is the
 --    start of that window in UTC. A user's traffic therefore lands on two rows per
 --    endpoint at any moment: the current minute's and the current day's.
@@ -104,7 +47,7 @@ CREATE TABLE IF NOT EXISTS public.ai_usage (
 -- The cleanup below deletes by age across every user; without this it would scan the table.
 CREATE INDEX IF NOT EXISTS ai_usage_bucket_start_idx ON public.ai_usage (bucket_start);
 
--- 7. Row Level Security. Users may READ their own counters (useful for a future
+-- 2. Row Level Security. Users may READ their own counters (useful for a future
 --    "N messages left today"), and nothing else. There is deliberately no INSERT, UPDATE or
 --    DELETE policy and no write grant: a user who could write here could zero their own
 --    counter and the limit would be decoration. Every write goes through
@@ -123,7 +66,7 @@ CREATE POLICY "Users read own AI usage"
 REVOKE ALL ON public.ai_usage FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.ai_usage TO authenticated;
 
--- 8. The only way in: count one call for the CALLER and return both running totals.
+-- 3. The only way in: count one call for the CALLER and return both running totals.
 --
 --    - The user comes from auth.uid(), i.e. from the JWT PostgREST already verified. There
 --      is no user parameter, so nobody can bump (or be blamed for) someone else's usage.

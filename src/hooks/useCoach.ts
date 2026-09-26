@@ -16,6 +16,7 @@ import { buildTdeeEstimate } from '../utils/tdee'
 import { getCoachAlerts } from '../utils/coachAlerts'
 import { buildLocalRecommendation } from '../utils/localRecommendation'
 import { getDateString } from '../utils/calculations'
+import { aiAuthHeaders, aiRefusalMessage } from '../lib/apiAuth'
 
 /** Window the rolling intake average is taken over, in days. */
 const RECENT_WINDOW_DAYS = 14
@@ -31,6 +32,9 @@ const REQUEST_TIMEOUT_MS = 30_000
 
 const OFFLINE_ERROR =
   'Could not reach the coach, so this plan was calculated on your device instead.'
+
+/** Follows the server's own reason when it refused (signed out, over the limit). */
+const REFUSED_SUFFIX = 'This plan was calculated on your device instead.'
 
 const PHASES: readonly PhaseType[] = ['cut', 'lean_bulk', 'maintain', 'recomp']
 
@@ -355,14 +359,21 @@ export const useCoach = (): CoachState => {
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
     const run = async (): Promise<void> => {
+      // Set when the server answered but refused: "could not reach the coach" would be false.
+      let refusal: string | null = null
       try {
         const response = await fetch('/api/recommend', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          // The signal bounds the session lookup too: a token refresh stalled on the network
+          // would otherwise hold `loading` and the in-flight guard past REQUEST_TIMEOUT_MS.
+          headers: { 'Content-Type': 'application/json', ...(await aiAuthHeaders(controller.signal)) },
           body: JSON.stringify(payload),
           signal: controller.signal,
         })
-        if (!response.ok) throw new Error(`Coach service responded ${response.status}`)
+        if (!response.ok) {
+          refusal = aiRefusalMessage(response.status, await response.json().catch(() => null))
+          throw new Error(`Coach service responded ${response.status}`)
+        }
         const parsed = parseRecommendation(await response.json())
         if (!parsed) throw new Error('Coach service returned an unusable plan')
         setRecommendation(parsed)
@@ -377,7 +388,7 @@ export const useCoach = (): CoachState => {
             anchorTdee: fallbackRef.current.anchorTdee,
           })
         )
-        if (mountedRef.current) setError(OFFLINE_ERROR)
+        if (mountedRef.current) setError(refusal === null ? OFFLINE_ERROR : `${refusal} ${REFUSED_SUFFIX}`)
       } finally {
         clearTimeout(timer)
         inFlightRef.current = false

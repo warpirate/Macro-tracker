@@ -1,4 +1,5 @@
 import { API_KEY, client, CHAT_MODEL, modelRequestOptions } from './_nebius'
+import { requireAiCaller } from './_auth'
 import { buildLocalRecommendation, clampRecommendationNumbers } from '../src/utils/localRecommendation'
 import type {
   BodyComposition,
@@ -37,6 +38,17 @@ const RATE_MIN_KG_PER_WEEK = -1.5
 const RATE_MAX_KG_PER_WEEK = 1.0
 const DURATION_MIN_WEEKS = 4
 const DURATION_MAX_WEEKS = 24
+
+/*
+  The largest body accepted. The rate limit counts calls, but the body decides what each one
+  costs: its strings (the profile name, the TDEE basis, every alert's title and detail) go
+  into the system prompt as sent. A real request is a profile, a TDEE estimate and at most
+  three alerts (getCoachAlerts), 2-3 KB; this leaves room for that many times over
+  and holds a scripted one to a prompt a few times the normal size rather than the model's
+  whole context window. One cap on the body covers every field, including any the prompt
+  gains later, where clamping each string would not.
+*/
+const MAX_BODY_CHARS = 32_000
 
 /** Sanity bounds on bodyweight. Outside these the request is malformed, not extreme. */
 const MIN_HUMAN_WEIGHT_KG = 25
@@ -409,7 +421,8 @@ const buildAiRecommendation = (text: string, ctx: RecContext): Recommendation | 
 
 /**
  * Returns `{ recommendation }` for a POST body of precomputed coach inputs.
- * 405 for a non-POST method and 400 for a body that is not a JSON object; every other
+ * 405 for a non-POST method, 413 for a body over MAX_BODY_CHARS and 400 for a body that is
+ * not a JSON object (plus the 401/429/5xx refusals of requireAiCaller); every other
  * failure — model error, timeout, unparseable reply, bad phase, non-finite macro — falls
  * back to the deterministic local plan with HTTP 200, so the client always gets a usable
  * recommendation.
@@ -419,9 +432,19 @@ export default async function handler(req: Request): Promise<Response> {
     return jsonResponse({ error: 'Method not allowed' }, 405)
   }
 
+  /*
+    A refusal here is a 401 or 429, not the local plan. Both clients already build that same
+    plan on-device for any failure, so an anonymous caller loses nothing it could not compute
+    itself, and the status is what lets a client say WHY the coach did not answer.
+  */
+  const caller = await requireAiCaller(req, 'recommend')
+  if (caller instanceof Response) return caller
+
   let body: unknown
   try {
-    body = await req.json()
+    const raw = await req.text()
+    if (raw.length > MAX_BODY_CHARS) return jsonResponse({ error: 'That request is too large for the coach.' }, 413)
+    body = JSON.parse(raw)
   } catch {
     return jsonResponse({ error: 'Invalid JSON' }, 400)
   }

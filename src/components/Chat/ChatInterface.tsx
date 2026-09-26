@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { useStore } from '../../store/useStore'
 import { getTodayString } from '../../utils/calculations'
 import { Food, FoodCategory, MealType } from '../../types'
+import { aiAuthHeaders, aiRefusalMessage } from '../../lib/apiAuth'
 
 interface ChatMessage {
   id: string
@@ -12,7 +13,21 @@ interface ChatMessage {
   text: string
   timestamp: number
   actions?: LoggedAction[]
+  /**
+   * Set on this client's own error and refusal lines. They are shown but never sent back as
+   * history, where the model would read "Sorry, I ran into an error" as something it said.
+   */
+  failed?: boolean
 }
+
+/*
+  What the coach is sent of the conversation: the window api/chat.ts keeps (24 turns of at
+  most 4,000 characters) and the mobile app sends. The transcript lives as long as the tab
+  does, and sending all of it made every request bigger than the last for turns the server
+  only throws away.
+*/
+const HISTORY_TURNS = 24
+const MAX_TURN_CHARS = 4_000
 
 interface LoggedAction {
   type: 'food' | 'weight' | 'water'
@@ -116,10 +131,18 @@ export const ChatInterface: React.FC = () => {
       const imageBase64 = await compressToBase64(file)
       const res = await fetch('/api/analyze-photo', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await aiAuthHeaders()) },
         body: JSON.stringify({ imageBase64, mealType: 'unknown' }),
       })
       const data = await res.json()
+      // Signed out or over the limit: say which, rather than "couldn't identify food", which
+      // is what an empty `foods` would otherwise have claimed about a photo nobody looked at.
+      const refusal = aiRefusalMessage(res.status, data)
+      if (refusal !== null) {
+        setMessages(prev => [...prev, { id: uuidv4(), role: 'assistant', text: refusal, timestamp: Date.now(), failed: true }])
+        return
+      }
+      if (!res.ok) throw new Error(data.error || 'Request failed')
       const today = getTodayString()
       const loggedActions: LoggedAction[] = []
 
@@ -158,7 +181,7 @@ export const ChatInterface: React.FC = () => {
 
       setMessages(prev => [...prev, { id: uuidv4(), role: 'assistant', text, timestamp: Date.now(), actions: loggedActions }])
     } catch {
-      setMessages(prev => [...prev, { id: uuidv4(), role: 'assistant', text: 'Photo analysis failed. Try again.', timestamp: Date.now() }])
+      setMessages(prev => [...prev, { id: uuidv4(), role: 'assistant', text: 'Photo analysis failed. Try again.', timestamp: Date.now(), failed: true }])
     } finally {
       setLoading(false)
     }
@@ -173,16 +196,17 @@ export const ChatInterface: React.FC = () => {
     setInput('')
     setLoading(true)
 
-    // Build API message history (exclude welcome message, use only real conversation)
+    // The recent conversation only: no welcome, no error lines, and the server's window.
     const apiMessages: ApiMessage[] = messages
-      .filter(m => m.id !== 'welcome')
-      .map(m => ({ role: m.role, content: m.text }))
-    apiMessages.push({ role: 'user', content: text })
+      .filter(m => m.id !== 'welcome' && !m.failed)
+      .slice(-HISTORY_TURNS)
+      .map(m => ({ role: m.role, content: m.text.slice(0, MAX_TURN_CHARS) }))
+    apiMessages.push({ role: 'user', content: text.slice(0, MAX_TURN_CHARS) })
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await aiAuthHeaders()) },
         body: JSON.stringify({
           messages: apiMessages,
           context: {
@@ -196,6 +220,13 @@ export const ChatInterface: React.FC = () => {
       })
 
       const data = await res.json()
+      // A refusal is an answer, not a crash: shown as the assistant's reply, without the
+      // "Sorry, I ran into an error" wrapper that would make an expired sign-in read as a bug.
+      const refusal = aiRefusalMessage(res.status, data)
+      if (refusal !== null) {
+        setMessages(prev => [...prev, { id: uuidv4(), role: 'assistant', text: refusal, timestamp: Date.now(), failed: true }])
+        return
+      }
       if (!res.ok) throw new Error(data.error || 'Request failed')
 
       // Execute the actions returned by Claude
@@ -288,7 +319,7 @@ export const ChatInterface: React.FC = () => {
       const errMsg = err instanceof Error ? err.message : 'Something went wrong'
       setMessages(prev => [
         ...prev,
-        { id: uuidv4(), role: 'assistant', text: `Sorry, I ran into an error: ${errMsg}`, timestamp: Date.now() },
+        { id: uuidv4(), role: 'assistant', text: `Sorry, I ran into an error: ${errMsg}`, timestamp: Date.now(), failed: true },
       ])
     } finally {
       setLoading(false)

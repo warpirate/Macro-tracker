@@ -1,5 +1,6 @@
 import { client, VISION_MODEL, modelRequestOptions, requireApiKey } from './_nebius'
 import { analyzeMealPhoto } from './_photo'
+import { requireAiCaller } from './_auth'
 
 export const config = { runtime: 'edge' }
 
@@ -16,10 +17,17 @@ export const config = { runtime: 'edge' }
 */
 const VISION_TIMEOUT_MS = 18000
 
+/** About 6 MB of JPEG once decoded; far above what the app sends. */
+const MAX_IMAGE_CHARS = 8_000_000
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
   }
+
+  // Checked before the body is read: a stranger's megabyte of base64 is never parsed.
+  const caller = await requireAiCaller(req, 'analyze-photo')
+  if (caller instanceof Response) return caller
 
   try {
     requireApiKey()
@@ -40,6 +48,13 @@ export default async function handler(req: Request): Promise<Response> {
   const { imageBase64, mealType } = body
   if (!imageBase64) {
     return new Response(JSON.stringify({ error: 'imageBase64 required' }), { status: 400 })
+  }
+  /*
+    The app resizes photos before sending (a few hundred kilobytes). A multi-megabyte image
+    is either a bug or someone paying for vision tokens with our key, so it stops here.
+  */
+  if (typeof imageBase64 !== 'string' || imageBase64.length > MAX_IMAGE_CHARS) {
+    return new Response(JSON.stringify({ error: 'That photo is too large. Try again with a smaller one.' }), { status: 413 })
   }
 
   // Accept either a bare base64 payload or an already-formed data URL

@@ -17,8 +17,10 @@ const INVISIBLE = new RegExp('[\\u200B\\u200C\\u200D\\uFEFF]', 'g')
  * Zero-width characters are stripped for the same reason they are in the Supabase client:
  * they survive a copy-paste into a dashboard field, are invisible in it, and break the
  * request with an unrelated-looking error.
+ *
+ * Exported because ./_auth reads the Supabase variables the same way, for the same reasons.
  */
-const read = (value: string | undefined): string | null => {
+export const read = (value: string | undefined): string | null => {
   if (typeof value !== 'string') return null
   const cleaned = value.replace(INVISIBLE, '').trim().replace(/^["']|["']$/g, '')
   return cleaned.length > 0 ? cleaned : null
@@ -74,8 +76,15 @@ export const VISION_MODEL = read(process.env.NEBIUS_VISION_MODEL) ?? 'moonshotai
 /** The key is the one value with no safe default — fail naming it, not "Invalid URL". */
 export const API_KEY = read(process.env.NEBIUS_API_KEY)
 
+/*
+  A placeholder, not an empty string, when the key is missing. The OpenAI constructor throws
+  on an empty key at module load, which crashed every AI handler on import, before
+  requireApiKey() could return its 500 naming the variable. With a placeholder the module
+  loads, the handler runs, and requireApiKey() refuses the request with the useful message.
+  The placeholder never reaches Nebius: every handler calls requireApiKey() first.
+*/
 export const client = new OpenAI({
-  apiKey: API_KEY ?? '',
+  apiKey: API_KEY ?? 'missing-NEBIUS_API_KEY',
   baseURL: BASE_URL,
 })
 

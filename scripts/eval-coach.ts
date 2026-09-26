@@ -13,8 +13,11 @@
  *
  * The model is fixed at import, so compare models one run at a time:
  *   NEBIUS_CHAT_MODEL=moonshotai/Kimi-K3 npx tsx --env-file=.env scripts/eval-coach.ts
+ *
+ * The handler requires a signed-in caller (api/_auth.ts). This script has no user, so it
+ * runs with AI_AUTH=off unless told otherwise; the handler is imported only after that is
+ * set, because the guard reads AI_AUTH when its module loads.
  */
-import handler from '../api/chat'
 import { CHAT_MODEL } from '../api/_nebius'
 import { BY_ID } from '../api/_catalog'
 
@@ -77,7 +80,11 @@ interface Reply {
   seconds: number
 }
 
+process.env.AI_AUTH ??= 'off'
+const handlerReady = import('../api/chat').then(m => m.default)
+
 const ask = async (text: string, overrides: Record<string, unknown> = {}): Promise<Reply> => {
+  const handler = await handlerReady
   const started = Date.now()
   const res = await handler(
     new Request('http://local/api/chat', {

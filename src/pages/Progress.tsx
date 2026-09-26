@@ -14,6 +14,7 @@ import {
 } from '../utils/calculations'
 import { getPersonalRecords, weeklyVolumeByMuscle } from '../utils/workoutMath'
 import { DiaryDay } from '../types'
+import { aiAuthHeaders, aiRefusalMessage } from '../lib/apiAuth'
 
 type Period = '7d' | '30d'
 type ChartType = 'calories' | 'macros' | 'weight' | 'training'
@@ -276,7 +277,7 @@ export const Progress: React.FC = () => {
 
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await aiAuthHeaders()) },
         body: JSON.stringify({
           messages: [{
             role: 'user',
@@ -286,7 +287,9 @@ export const Progress: React.FC = () => {
         }),
       })
       const data = await res.json()
-      setInsights(data.text || 'No insights available.')
+      // An expired sign-in or a spent limit has no `text`, and "No insights available" would
+      // blame the data for what is really an account problem.
+      setInsights(aiRefusalMessage(res.status, data) ?? (data.text || 'No insights available.'))
     } catch {
       setInsights('Failed to load insights. Try again.')
     } finally {
