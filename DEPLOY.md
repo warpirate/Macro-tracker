@@ -65,6 +65,18 @@ Easiest path is the GitHub integration — no CLI, no tokens:
 
    Deploying with it unset skips to step 3 and shuts the coach for every older APK.
    `AI_AUTH=off` removes the gate entirely, for emergencies.
+
+   Set it with the value on the command line, and not as a sensitive variable, so it can be
+   read back:
+
+   ```
+   npx vercel env add AI_AUTH production --value soft --no-sensitive --force --yes
+   npx vercel env pull .env.check --environment=production --yes && grep '^AI_AUTH=' .env.check && rm .env.check
+   ```
+
+   It must print `AI_AUTH="soft"`. Piping the value in (`printf soft | vercel env add ...`)
+   saved an empty string on Windows, and an empty value counts as unset: required. A
+   sensitive variable always pulls back as `""`, so it cannot be checked at all.
 4. Deploy, then add the deployment URL to Supabase under
    **Authentication → URL Configuration → Site URL / Redirect URLs**, or email
    confirmation and magic links will bounce back to `localhost`.
