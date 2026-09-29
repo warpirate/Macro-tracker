@@ -550,6 +550,15 @@ export const requireAiCaller = async (req: Request, endpoint: AiEndpoint): Promi
   switch (verified.kind) {
     case 'rejected':
       explainForeignToken(token, SUPABASE.url)
+      /*
+        Soft mode keeps a build with a lapsed session working exactly as it keeps a build with
+        no session: through, uncounted. Refusing it here would cut off precisely the 1.4.2
+        users whose sign-in expired, while tokenless 1.4.1 calls sail through.
+      */
+      if (AI_AUTH_MODE === 'soft') {
+        noteTokenless(endpoint, Date.now())
+        return { userId: null }
+      }
       return json({ error: SESSION_REJECTED }, 401)
     case 'misconfigured': {
       const error =
