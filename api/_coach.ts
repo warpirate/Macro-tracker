@@ -83,6 +83,20 @@ export interface CoachPack {
   memory?: string[]
   /** The app's own on-device next-meal suggestion, if it has one. */
   nextMealIdea?: string
+  /**
+   * Today's water, steps and the last week of training, from the phone. Absent from 1.4.2
+   * phones and the web app, in which case the prompt has no ACTIVITY section.
+   */
+  activity?: {
+    water: { todayMl: number; goalMl: number; avg7Ml: number }
+    /** null: Health Connect is not connected, so steps are unknown, not zero. */
+    steps: { today: number; avg7: number } | null
+    training: {
+      today: { planned: string | null; done: string | null }
+      week: { date: string; name: string; topSets: string; prs: string[] }[]
+      weeklyGoal: { done: number; target: number } | null
+    }
+  }
 }
 
 export interface CoachContext {
@@ -442,6 +456,30 @@ const renderWeights = (weights: CoachPack['weights']): string => {
   return '  ' + weights.map(w => `${w.date} ${w.kg.toFixed(1)}`).join(', ')
 }
 
+const litres = (ml: number): string => (ml / 1000).toFixed(1)
+
+const renderActivity = (activity: CoachPack['activity']): string => {
+  if (!activity) return ''
+  const { water, steps, training } = activity
+  const today = training.today.done
+    ? `done: ${training.today.done}`
+    : training.today.planned
+      ? `planned: ${training.today.planned}`
+      : 'rest or nothing planned'
+  const lines = [
+    'ACTIVITY (context for WHAT and WHEN to eat; it never changes calorie targets)',
+    `  Water: ${litres(water.todayMl)} L of ${litres(water.goalMl)} L today, 7-day average ${litres(water.avg7Ml)} L`,
+    `  Steps: ${steps ? `${steps.today} today, usual ${steps.avg7}` : 'not connected (Health Connect is off); never estimate them'}`,
+    `  Training today: ${today}`,
+  ]
+  if (training.weeklyGoal) lines.push(`  This week: ${training.weeklyGoal.done} of ${training.weeklyGoal.target} sessions`)
+  if (training.week.length === 0) lines.push('  (no workouts in the last 7 days)')
+  for (const s of training.week) {
+    lines.push(`  ${s.date} ${s.name}: ${s.topSets || 'no weighted sets'}${s.prs.length ? ` | PRs: ${s.prs.join(', ')}` : ''}`)
+  }
+  return `${lines.join('\n')}\n`
+}
+
 export const buildCoachPrompt = (context: CoachContext, lastUserMessage = ''): string => {
   const pack = context.coach ?? {}
   const entries = context.todayEntries ?? []
@@ -521,7 +559,7 @@ ${renderWeights(pack.weights)}
 ENERGY
   Predicted TDEE ${round(energy.predictedTdee)} kcal | Measured TDEE ${energy.measuredTdee == null ? 'not enough data' : round(energy.measuredTdee)} kcal (confidence ${energy.confidence ?? 'none'}, ${round(energy.daysOfData)} days) | Weight trend ${energy.trendKgPerWeek == null ? 'unknown' : `${energy.trendKgPerWeek.toFixed(2)} kg/week`}
 
-CURRENT PLAN
+${renderActivity(pack.activity)}CURRENT PLAN
   ${plan ? `${plan.phase}: ${plan.calories} kcal, P${plan.protein} C${plan.carbs} F${plan.fat}, set ${plan.ageDays} days ago, ${plan.accepted ? 'in use' : 'not applied'}` : 'none'}
 ${pack.alerts && pack.alerts.length ? `APP ALERTS\n${pack.alerts.map(a => `  - ${a}`).join('\n')}\n` : ''}
 USUAL FOODS (id, meal, usual servings)
@@ -538,6 +576,7 @@ HOW TO ACT
 5. When they tell you a lasting preference or routine, call remember. When they say it changed, call forget.
 6. Questions about progress ("why am I not losing?", "how was my week?"): answer from the 14 days, weights and energy above. Name the actual cause with numbers (e.g. "you averaged 2,340 kcal on 5 logged days against 1,900"). If data is thin, say so.
 7. Propose new targets (propose_targets) only when the data supports it, or in the check-in.
+8. ACTIVITY shapes what and when, never how much: never add calories for steps or workouts, because the targets already come from the weigh-in trend in ENERGY. If asked to "eat back" activity, say that in one line, then help place today's remaining calories: carbs around training, protein spread across meals, a recovery meal after a session. Mention water only when today is below pace for the time of day. When steps are not connected, never guess a number; you may suggest connecting Health Connect once.
 
 HOW TO WRITE (a chat bubble on a phone, ~300 points wide)
 - At most six short lines. Answer the question in the first line, with the number that matters.
