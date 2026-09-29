@@ -458,17 +458,34 @@ const renderWeights = (weights: CoachPack['weights']): string => {
 
 const litres = (ml: number): string => (ml / 1000).toFixed(1)
 
-const renderActivity = (activity: CoachPack['activity']): string => {
+/**
+ * Whether today's water is behind, worked out here rather than left to the model: asked for a
+ * snack at 15:00 with 0.6 of 3 L drunk, it never did the arithmetic and said nothing. Same rule
+ * as the phone's opener line (src/lib/activity.ts): an even share of the goal from 07:00 to
+ * 22:00, behind below 60% of it, and only from noon. `now` is the phone's "Tuesday 29 Sep, 15:00".
+ */
+const waterPace = (water: NonNullable<CoachPack['activity']>['water'], now: string | undefined): string => {
+  const clock = now?.match(/(\d{1,2}):(\d{2})\s*$/)
+  if (!clock || water.goalMl <= 0) return ''
+  const hour = Number(clock[1]) + Number(clock[2]) / 60
+  const expectedMl = (water.goalMl * Math.min(1, Math.max(0, (hour - 7) / 15)))
+  if (hour >= 12 && water.todayMl < 0.6 * expectedMl) {
+    return `; BEHIND pace (about ${litres(expectedMl)} L expected by ${clock[1]}:${clock[2]})`
+  }
+  return '; on pace'
+}
+
+const renderActivity = (activity: CoachPack['activity'], now: string | undefined): string => {
   if (!activity) return ''
   const { water, steps, training } = activity
   const today = training.today.done
     ? `done: ${training.today.done}`
     : training.today.planned
-      ? `planned: ${training.today.planned}`
+      ? `planned: ${training.today.planned}, not done yet`
       : 'rest or nothing planned'
   const lines = [
     'ACTIVITY (context for WHAT and WHEN to eat; it never changes calorie targets)',
-    `  Water: ${litres(water.todayMl)} L of ${litres(water.goalMl)} L today, 7-day average ${litres(water.avg7Ml)} L`,
+    `  Water: ${litres(water.todayMl)} L of ${litres(water.goalMl)} L today, 7-day average ${litres(water.avg7Ml)} L${waterPace(water, now)}`,
     `  Steps: ${steps ? `${steps.today} today, usual ${steps.avg7}` : 'not connected (Health Connect is off); never estimate them'}`,
     `  Training today: ${today}`,
   ]
@@ -559,7 +576,7 @@ ${renderWeights(pack.weights)}
 ENERGY
   Predicted TDEE ${round(energy.predictedTdee)} kcal | Measured TDEE ${energy.measuredTdee == null ? 'not enough data' : round(energy.measuredTdee)} kcal (confidence ${energy.confidence ?? 'none'}, ${round(energy.daysOfData)} days) | Weight trend ${energy.trendKgPerWeek == null ? 'unknown' : `${energy.trendKgPerWeek.toFixed(2)} kg/week`}
 
-${renderActivity(pack.activity)}CURRENT PLAN
+${renderActivity(pack.activity, pack.now)}CURRENT PLAN
   ${plan ? `${plan.phase}: ${plan.calories} kcal, P${plan.protein} C${plan.carbs} F${plan.fat}, set ${plan.ageDays} days ago, ${plan.accepted ? 'in use' : 'not applied'}` : 'none'}
 ${pack.alerts && pack.alerts.length ? `APP ALERTS\n${pack.alerts.map(a => `  - ${a}`).join('\n')}\n` : ''}
 USUAL FOODS (id, meal, usual servings)
@@ -576,7 +593,7 @@ HOW TO ACT
 5. When they tell you a lasting preference or routine, call remember. When they say it changed, call forget.
 6. Questions about progress ("why am I not losing?", "how was my week?"): answer from the 14 days, weights and energy above. Name the actual cause with numbers (e.g. "you averaged 2,340 kcal on 5 logged days against 1,900"). If data is thin, say so.
 7. Propose new targets (propose_targets) only when the data supports it, or in the check-in.
-8. ACTIVITY shapes what and when, never how much: never add calories for steps or workouts, because the targets already come from the weigh-in trend in ENERGY. If asked to "eat back" activity, say that in one line, then help place today's remaining calories: carbs around training, protein spread across meals, a recovery meal after a session. Mention water only when today is below pace for the time of day. When steps are not connected, never guess a number; you may suggest connecting Health Connect once.
+8. ACTIVITY shapes what and when, never how much: never add calories for steps or workouts, because the targets already come from the weigh-in trend in ENERGY. If asked to "eat back" activity, say that in one line, then help place today's remaining calories: carbs around training, protein spread across meals, a recovery meal after a session. When the Water line says BEHIND, add one short water nudge to your answer whatever the question (e.g. a glass of water or buttermilk with the snack); otherwise do not bring water up. A session "not done yet" is still to come today: never say it was completed. When steps are not connected, never guess a number; you may suggest connecting Health Connect once.
 
 HOW TO WRITE (a chat bubble on a phone, ~300 points wide)
 - At most six short lines. Answer the question in the first line, with the number that matters.

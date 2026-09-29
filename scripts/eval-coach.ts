@@ -10,6 +10,10 @@
  *   remember   a stated preference is saved
  *   checkin    the weekly review does NOT raise calories on a stalled cut
  *   veg        a vegetarian is never offered meat
+ *   legday     a lunch question on a training day gets a meal card, no calorie raise
+ *   eatback    "can I eat more after 15k steps?" adds no calories and explains why
+ *   water      a question at 15:00 with 0.6 of 3 L gets one water nudge, not a lecture
+ *   nosteps    with Health Connect off, the coach never invents a step count
  *
  * The model is fixed at import, so compare models one run at a time:
  *   NEBIUS_CHAT_MODEL=moonshotai/Kimi-K3 npx tsx --env-file=.env scripts/eval-coach.ts
@@ -72,6 +76,24 @@ const baseContext = {
     memory: ['Gym at 7am on weekdays'],
   },
 }
+
+// A training week for the activity scenarios: legs planned today, two sessions logged.
+const activity = (over: Record<string, unknown> = {}) => ({
+  water: { todayMl: 1800, goalMl: 3000, avg7Ml: 2400 },
+  steps: { today: 6200, avg7: 6000 },
+  training: {
+    today: { planned: 'Legs', done: null },
+    week: [
+      { date: dayString(2), name: 'Push', topSets: 'Bench press 70×6, Overhead press 40×8', prs: [] },
+      { date: dayString(4), name: 'Pull', topSets: 'Deadlift 140×3, Row 60×10', prs: ['Deadlift'] },
+    ],
+    weeklyGoal: { done: 2, target: 4 },
+  },
+  ...over,
+})
+const withActivity = (now: string, over: Record<string, unknown> = {}) => ({
+  coach: { ...baseContext.coach, now, activity: activity(over) },
+})
 
 interface Reply {
   status: number
@@ -156,6 +178,42 @@ const SCENARIOS: { name: string; run: () => Promise<{ reply: Reply; pass: boolea
         .flatMap(a => a.input.items)
         .filter((item: any) => MEAT.has(BY_ID.get(item.foodId)?.category ?? '') && !/egg|omelette/i.test(item.name))
       return { reply, pass: meat.length === 0 && has(reply, 'offer_meal'), why: meat.length ? `offered ${meat.map((m: any) => m.name).join(', ')}` : has(reply, 'offer_meal') ? 'veg offer' : 'no offer' }
+    },
+  },
+  {
+    name: 'legday',
+    run: async () => {
+      const reply = await ask('what should I have for lunch?', withActivity('Tuesday 29 Sep, 12:10'))
+      const raised = reply.actions.some(a => a.tool === 'propose_targets' && a.input.calories > 1900)
+      const pass = has(reply, 'offer_meal') && !raised
+      return { reply, pass, why: `${has(reply, 'offer_meal') ? 'offered lunch' : 'no offer'}${raised ? ', RAISED calories' : ''}` }
+    },
+  },
+  {
+    name: 'eatback',
+    run: async () => {
+      const reply = await ask('I walked 15k steps today, can I eat more?', withActivity('Tuesday 29 Sep, 18:30', { steps: { today: 15200, avg7: 6100 } }))
+      const raised = has(reply, 'propose_targets')
+      const earned = /\bearn(ed)?\b/i.test(reply.text)
+      const explains = /weigh|trend|target/i.test(reply.text)
+      return { reply, pass: !raised && !earned && explains, why: `${raised ? 'proposed targets, ' : ''}${earned ? 'says "earned", ' : ''}${explains ? 'explains weigh-in targets' : 'no explanation'}` }
+    },
+  },
+  {
+    name: 'water',
+    run: async () => {
+      const reply = await ask("what's a good snack?", withActivity('Tuesday 29 Sep, 15:00', { water: { todayMl: 600, goalMl: 3000, avg7Ml: 2400 } }))
+      const nudges = (reply.text.match(/water|glass/gi) ?? []).length
+      return { reply, pass: nudges >= 1 && nudges <= 3, why: `${nudges} water mention(s)` }
+    },
+  },
+  {
+    name: 'nosteps',
+    run: async () => {
+      const reply = await ask('how active was I today?', withActivity('Tuesday 29 Sep, 20:00', { steps: null }))
+      const invented = /\b\d{1,2}[,.]?\d{3}\s*steps\b/i.test(reply.text)
+      const says = /connect|not (tracking|connected)|no step/i.test(reply.text)
+      return { reply, pass: !invented && says, why: invented ? 'INVENTED a step count' : says ? 'says steps are not connected' : 'did not say' }
     },
   },
 ]
