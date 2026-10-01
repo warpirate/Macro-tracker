@@ -3,6 +3,8 @@ import { client, CHAT_MODEL, modelRequestOptions, NO_THINKING, requireApiKey } f
 import { requireAiCaller } from './_auth'
 import {
   buildCoachPrompt,
+  CLAIMED_WITHOUT_LOGGING,
+  claimsUnloggedFood,
   COACH_TOOLS,
   describeAction,
   honestReply,
@@ -198,6 +200,46 @@ export default async function handler(req: Request): Promise<Response> {
       if (finalText.trim().length === 0) finalText = actions.length > 0 ? describeActions(actions) : ''
     } else {
       finalText = assistantMsg?.content ?? ''
+    }
+
+    /*
+      The model sometimes writes "Logging 300 g kichidi… it should now appear in your diary"
+      and calls nothing — reliably so deep in a conversation full of its own earlier claims.
+      Asked once more with a tool required, it makes the call it described. If that fails
+      too, honestReply below says so instead of letting the claim stand.
+    */
+    if (claimsUnloggedFood(finalText, actions, context)) {
+      try {
+        const retry = await client.chat.completions.create(
+          {
+            model: CHAT_MODEL,
+            max_tokens: 1024,
+            tools: COACH_TOOLS,
+            tool_choice: 'required',
+            ...NO_THINKING,
+            messages: [...convo, { role: 'system', content: CLAIMED_WITHOUT_LOGGING }],
+          },
+          modelRequestOptions(SUMMARY_TIMEOUT_MS),
+        )
+        const retried: CoachAction[] = []
+        for (const call of (retry.choices[0]?.message?.tool_calls ?? []) as OpenAI.Chat.Completions.ChatCompletionMessageToolCall[]) {
+          if (call.type !== 'function' || call.function.name !== 'log_food') continue
+          let input: Record<string, unknown> = {}
+          try {
+            input = JSON.parse(call.function.arguments || '{}')
+          } catch {
+            continue
+          }
+          const action = resolveAction(call.function.name, input, context)
+          if (action) retried.push(action)
+        }
+        if (retried.length > 0) {
+          actions.push(...retried)
+          finalText = describeActions(retried)
+        }
+      } catch {
+        // Out of time or the model failed: honestReply turns the claim into the truth.
+      }
     }
 
     return new Response(JSON.stringify({ text: honestReply(scrubReply(finalText), actions, context), actions, refused }), {

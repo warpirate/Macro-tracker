@@ -308,6 +308,15 @@ export const resolveAction = (
         in servingSize ("300 g kichidi" -> servingSize 300 and totals for it), and refusing those
         calls is how "logged it" replies came back with nothing in the diary.
       */
+      // "300 g" sometimes arrives as 300 servings of 1 g. The macros are totals either way, so
+      // fold it into one 300 g serving rather than let the clamp turn it into "×10 (1 g)".
+      if (!catalogFood) {
+        const count = num(input.servings)
+        const size = num(input.servingSize)
+        if (count !== null && count > 10 && size !== null && size > 0) {
+          input = { ...input, servings: 1, servingSize: count * size }
+        }
+      }
       const servings = clampServings(input.servings ?? 1, catalogFood?.servingSize ?? num(input.servingSize) ?? 100)
       if (servings === null) return null
       if (catalogFood) return { tool: 'log_food', input: { ...fromCatalog(catalogFood, servings), meal: mealOf(input.meal) } }
@@ -446,8 +455,19 @@ export const scrubReply = (reply: string): string =>
  * haven't logged anything yet" must not match.
  */
 const CLAIMS_LOGGED =
-  /(?:^|\n)\s*logged\b|\bi(?:'ve| have)? (?:just )?logged\b|\blogged (?:as|under|for|it|that|your|\d)|\blogging (?:\d|it|that|now|your|the|this)\b|\b(?:added|saved) (?:it |that |this )?(?:to|in|under) (?:your )?(?:breakfast|lunch|dinner|snacks?|diary|log)\b/i
+  /(?:^|\n)\s*logged\b|\bi(?:'ve| have)? (?:just )?logged\b|\blogged (?:as|under|for|it|that|your|\d)|\blogging (?:\d|(?:it|that|now|your|the|this)\b)|\b(?:added|saved) (?:it |that |this )?(?:to|in|under) (?:your )?(?:breakfast|lunch|dinner|snacks?|diary|log)\b|\b(?:should|will) (?:now )?(?:appear|show(?: up)?) in your (?:diary|log)\b/i
 const CLAIMS_ALREADY = /\balready logged\b/i
+
+/** Whether the reply tells the user food is in their diary when no log_food went through. */
+export const claimsUnloggedFood = (reply: string, actions: CoachAction[], context: CoachContext): boolean => {
+  if (actions.some(a => a.tool === 'log_food')) return false
+  const todayEmpty = (context.todayEntries?.length ?? 0) === 0
+  return CLAIMS_LOGGED.test(reply) || (todayEmpty && CLAIMS_ALREADY.test(reply))
+}
+
+/** Said to the model when its reply claimed a log it never made, before it is asked again. */
+export const CLAIMED_WITHOUT_LOGGING =
+  'Your reply said food was logged, but you called no log_food, so nothing is in the diary. If the user reported food they ate (now or earlier in this conversation) and it is not in TODAY\'S LOGGED ENTRIES, call log_food for it now. Otherwise call no food tool.'
 
 /**
  * The model's reply, unless it says food was logged when no log_food went through. It does
@@ -457,13 +477,10 @@ const CLAIMS_ALREADY = /\balready logged\b/i
  * "Already logged" is true when today has entries (the model declining a duplicate), and
  * the same lie when today is empty.
  */
-export const honestReply = (reply: string, actions: CoachAction[], context: CoachContext): string => {
-  if (actions.some(a => a.tool === 'log_food')) return reply
-  const todayEmpty = (context.todayEntries?.length ?? 0) === 0
-  return CLAIMS_LOGGED.test(reply) || (todayEmpty && CLAIMS_ALREADY.test(reply))
+export const honestReply = (reply: string, actions: CoachAction[], context: CoachContext): string =>
+  claimsUnloggedFood(reply, actions, context)
     ? "That didn't go into your diary. Send the food and how much, like \"300 g kichidi for breakfast\", and I'll log it."
     : reply
-}
 
 /** Why a tool call was refused, so the model does not claim it happened. */
 export const REFUSED = 'Refused: the arguments were unusable (unknown food id, missing numbers, or targets outside safe limits). Do not claim this happened.'
