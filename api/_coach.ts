@@ -462,12 +462,37 @@ const CLAIMS_ALREADY = /\balready logged\b/i
 export const claimsUnloggedFood = (reply: string, actions: CoachAction[], context: CoachContext): boolean => {
   if (actions.some(a => a.tool === 'log_food')) return false
   const todayEmpty = (context.todayEntries?.length ?? 0) === 0
-  return CLAIMS_LOGGED.test(reply) || (todayEmpty && CLAIMS_ALREADY.test(reply))
+  return CLAIMS_LOGGED.test(reply) || CLAIMS_TALLY.test(reply) || (todayEmpty && CLAIMS_ALREADY.test(reply))
 }
+
+/** "Logging:" as a heading, and a running total that only makes sense after a log. */
+const CLAIMS_TALLY = /\blogging\s*:|\btotal (?:eaten|so far)\b/i
+
+const AMOUNT =
+  /\b\d+(?:\.\d+)?\s*(?:g|gms?|grams?|kg|ml|l|litres?|liters?|katoris?|cups?|bowls?|pieces?|pcs|plates?|tbsp|tsp|slices?|glass(?:es)?|scoops?|nos?)\b/i
+const LEADING_MEAL = /^\s*(?:breakfast|lunch|dinner|snacks?)\b|^\s*\d+(?:\.\d+)?\s+[a-z]|\b(?:i )?(?:had|ate|eaten)\b/i
+const ASKS_TO_LOG = /\b(?:log|record)\b|\badd (?:it|this|that|them)\b/i
+const HYPOTHETICAL = /\?|\b(?:what if|should i|can i|could i|how (?:many|much)|is it (?:ok|okay|fine))\b/i
+
+/**
+ * Whether the user's message reports food or asks for one to be logged, so a reply with no
+ * log_food has missed it. Judged on what the user wrote rather than how the model phrased its
+ * answer: the model's wording for "I logged it" has no end, the user's "lunch 250 g rice"
+ * does. Questions are left alone — "what if I had 3 idli?" is not a log.
+ */
+export const reportsFood = (message: string): boolean =>
+  !HYPOTHETICAL.test(message) && (AMOUNT.test(message) || LEADING_MEAL.test(message) || ASKS_TO_LOG.test(message))
 
 /** Said to the model when its reply claimed a log it never made, before it is asked again. */
 export const CLAIMED_WITHOUT_LOGGING =
-  'Your reply said food was logged, but you called no log_food, so nothing is in the diary. If the user reported food they ate (now or earlier in this conversation) and it is not in TODAY\'S LOGGED ENTRIES, call log_food for it now. Otherwise call no food tool.'
+  'You called no log_food, so nothing went into the diary, though the user reported food or asked for it to be logged. Call log_food now, once per item, for food they ate that is not already in TODAY\'S LOGGED ENTRIES.'
+
+/** Whether a retried log is a food already in today's diary under that meal. */
+export const alreadyLoggedToday = (action: CoachAction, context: CoachContext): boolean =>
+  action.tool === 'log_food' &&
+  (context.todayEntries ?? []).some(
+    e => e.name.trim().toLowerCase() === action.input.name.trim().toLowerCase() && e.meal === action.input.meal,
+  )
 
 /**
  * The model's reply, unless it says food was logged when no log_food went through. It does

@@ -2,10 +2,12 @@ import type OpenAI from 'openai'
 import { client, CHAT_MODEL, modelRequestOptions, NO_THINKING, requireApiKey } from './_nebius'
 import { requireAiCaller } from './_auth'
 import {
+  alreadyLoggedToday,
   buildCoachPrompt,
   CLAIMED_WITHOUT_LOGGING,
   claimsUnloggedFood,
   COACH_TOOLS,
+  reportsFood,
   describeAction,
   honestReply,
   REFUSED,
@@ -203,12 +205,16 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     /*
-      The model sometimes writes "Logging 300 g kichidi… it should now appear in your diary"
-      and calls nothing — reliably so deep in a conversation full of its own earlier claims.
-      Asked once more with a tool required, it makes the call it described. If that fails
-      too, honestReply below says so instead of letting the claim stand.
+      The model sometimes writes "Logging: 250 g rice… Total eaten: 980 kcal" and calls
+      nothing — reliably so deep in a conversation full of its own earlier claims. Whether
+      food was missed is judged mainly on the user's message ("lunch 250gms rice"), since the
+      model's ways of saying "logged" have no end. Asked once more with a tool required, it
+      makes the call it described. If that fails too, honestReply below says so instead of
+      letting a claim stand.
     */
-    if (claimsUnloggedFood(finalText, actions, context)) {
+    const missedFood =
+      !actions.some(a => a.tool === 'log_food') && (reportsFood(lastUserMessage) || claimsUnloggedFood(finalText, actions, context))
+    if (missedFood) {
       try {
         const retry = await client.chat.completions.create(
           {
@@ -231,7 +237,8 @@ export default async function handler(req: Request): Promise<Response> {
             continue
           }
           const action = resolveAction(call.function.name, input, context)
-          if (action) retried.push(action)
+          // A forced call can re-log what is already there; the diary already has it.
+          if (action && !alreadyLoggedToday(action, context)) retried.push(action)
         }
         if (retried.length > 0) {
           actions.push(...retried)
