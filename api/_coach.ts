@@ -303,7 +303,12 @@ export const resolveAction = (
   switch (name) {
     case 'log_food': {
       const catalogFood = typeof input.food_id === 'string' ? BY_ID.get(input.food_id) : undefined
-      const servings = clampServings(input.servings, catalogFood?.servingSize ?? num(input.servingSize) ?? 100)
+      /*
+        A missing count is one serving. The model often leaves it out when the amount is already
+        in servingSize ("300 g kichidi" -> servingSize 300 and totals for it), and refusing those
+        calls is how "logged it" replies came back with nothing in the diary.
+      */
+      const servings = clampServings(input.servings ?? 1, catalogFood?.servingSize ?? num(input.servingSize) ?? 100)
       if (servings === null) return null
       if (catalogFood) return { tool: 'log_food', input: { ...fromCatalog(catalogFood, servings), meal: mealOf(input.meal) } }
       // Without a catalog row the model's own figures are all there is, so they must exist.
@@ -435,6 +440,30 @@ export const scrubReply = (reply: string): string =>
     .replace(/\b(?:log_food|offer_meal|propose_targets|remove_food|log_weight|log_water)\b(?:\(\))?/g, '')
     .replace(/[ \t]{2,}/g, ' ')
     .trim()
+
+/**
+ * A reply telling the user food just went into their diary. Success wording only: "you
+ * haven't logged anything yet" must not match.
+ */
+const CLAIMS_LOGGED =
+  /(?:^|\n)\s*logged\b|\bi(?:'ve| have)? (?:just )?logged\b|\blogged (?:as|under|for|it|that|your|\d)|\blogging (?:\d|it|that|now|your|the|this)\b|\b(?:added|saved) (?:it |that |this )?(?:to|in|under) (?:your )?(?:breakfast|lunch|dinner|snacks?|diary|log)\b/i
+const CLAIMS_ALREADY = /\balready logged\b/i
+
+/**
+ * The model's reply, unless it says food was logged when no log_food went through. It does
+ * that despite being told not to (after a refused call, or with no call at all), and the user
+ * then hunts for an entry that does not exist. The diary is the truth; the reply must match it.
+ *
+ * "Already logged" is true when today has entries (the model declining a duplicate), and
+ * the same lie when today is empty.
+ */
+export const honestReply = (reply: string, actions: CoachAction[], context: CoachContext): string => {
+  if (actions.some(a => a.tool === 'log_food')) return reply
+  const todayEmpty = (context.todayEntries?.length ?? 0) === 0
+  return CLAIMS_LOGGED.test(reply) || (todayEmpty && CLAIMS_ALREADY.test(reply))
+    ? "That didn't go into your diary. Send the food and how much, like \"300 g kichidi for breakfast\", and I'll log it."
+    : reply
+}
 
 /** Why a tool call was refused, so the model does not claim it happened. */
 export const REFUSED = 'Refused: the arguments were unusable (unknown food id, missing numbers, or targets outside safe limits). Do not claim this happened.'
@@ -587,7 +616,10 @@ ${catalogFor(lastUserMessage, (pack.usualFoods ?? []).map(f => f.id))}
 ${checkin}
 HOW TO ACT
 1. Food the user says they ATE: log_food once per item. Use the catalog id whenever the food is in the catalog; count servings in that item's serving ("3 idli" with "Idli (1)" = 3; "2 cups rice" ≈ 2 katori). Log cooking oil or ghee separately only when mentioned. A question ("what if I had…") is NOT a log.
-2. Before logging, check TODAY'S LOGGED ENTRIES; never log something already there. To correct ("it was 4 idli, not 3"): remove_food, then log_food.
+   A food with an amount is a report of what they ate, with or without a sentence around it: "breakfast\nkichidi rice 300gms", "lunch - 2 chapati, dal", "300g curd rice" are all log_food, never meal ideas. A meal word in the message is the meal to log it under.
+   Keep their dish: kichidi is kichidi, not plain rice. When it is not in the catalog, log it under their name with your best estimate of that dish.
+   "Log it", "add it", "do it": log the food from their previous message.
+2. TODAY'S LOGGED ENTRIES is the only record of what is logged. Your earlier messages are not: if one said a food was logged and it is not in TODAY'S LOGGED ENTRIES, it was not logged, so log it now. Never log something that IS already there. To correct ("it was 4 idli, not 3"): remove_food, then log_food.
 3. Weight mentioned: log_weight. Water or plain fluids: log_water.
 4. Whenever you suggest what to eat, call offer_meal with catalog foods sized to what is left, favouring USUAL FOODS and respecting MEMORY. Then describe it in one line.
 5. When they tell you a lasting preference or routine, call remember. When they say it changed, call forget.
@@ -603,5 +635,6 @@ HOW TO WRITE (a chat bubble on a phone, ~300 points wide)
 - NEVER show catalog ids (like in043) or tool names in the text. They are for tool calls only.
 - NEVER state calorie or protein totals for a meal you suggest: the offer card beside your reply shows the app's exact figures, and your arithmetic will not match them. Name the foods; let the card do the numbers.
 - After logging food: one line confirming what went in and what is left for the day (from TODAY SO FAR minus what you just logged), then at most one tip.
+- Never write that food is logged, added or saved unless you called log_food for it in this reply. Saying so without the call puts nothing in their diary.
 - Keep one verdict per reply. Do not call progress "on track" and "too slow" in the same answer.`
 }

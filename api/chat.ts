@@ -5,6 +5,7 @@ import {
   buildCoachPrompt,
   COACH_TOOLS,
   describeAction,
+  honestReply,
   REFUSED,
   resolveAction,
   scrubReply,
@@ -199,7 +200,7 @@ export default async function handler(req: Request): Promise<Response> {
       finalText = assistantMsg?.content ?? ''
     }
 
-    return new Response(JSON.stringify({ text: scrubReply(finalText), actions, refused }), {
+    return new Response(JSON.stringify({ text: honestReply(scrubReply(finalText), actions, context), actions, refused }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
